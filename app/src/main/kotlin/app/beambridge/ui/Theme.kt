@@ -2,9 +2,7 @@ package app.beambridge.ui
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.MaterialExpressiveTheme
-import androidx.compose.material3.MotionScheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -39,7 +37,6 @@ private val ExpressiveShapes = Shapes(
     extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(40.dp),
 )
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun BeamBridgeTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val context = LocalContext.current
@@ -48,9 +45,8 @@ fun BeamBridgeTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable 
         dark -> Dark
         else -> Light
     }
-    MaterialExpressiveTheme(
+    MaterialTheme(
         colorScheme = colors,
-        motionScheme = MotionScheme.expressive(),
         shapes = ExpressiveShapes,
         content = content,
     )
