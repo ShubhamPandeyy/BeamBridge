@@ -154,7 +154,7 @@ private fun PowerStep(vm: MainViewModel, w: WizardState) {
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Point the phone at your ${w.brand?.name ?: ""} device. We pick a safe test key based on its state.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         OptionRow(Icons.Rounded.PowerSettingsNew, "It's off", "We'll send Power and it should turn on") { vm.setDeviceOn(false) }
-        OptionRow(Icons.AutoMirrored.Rounded.VolumeUp, "It's on", "We'll send Volume up (or another harmless key)") { vm.setDeviceOn(true) }
+        OptionRow(Icons.Rounded.VolumeUp, "It's on", "We'll send Volume up (or another harmless key)") { vm.setDeviceOn(true) }
         if (w.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
