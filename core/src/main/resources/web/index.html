@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BeamBridge</title>
+<meta name="theme-color" content="#1b1b21">
+<style>
+  :root {
+    --bg:#fbf8ff; --surface:#ffffff; --surface2:#efedf6; --on:#1b1b21; --muted:#5e5d6a;
+    --primary:#4f46c8; --on-primary:#fff; --tonal:#e2dfff; --on-tonal:#1a0f63; --ok:#1f7a47; --err:#ba1a1a;
+    --radius:28px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#131318; --surface:#1f1f26; --surface2:#2a2a32; --on:#e5e1ec; --muted:#c7c5d3;
+      --primary:#c3c0ff; --on-primary:#2a1f8f; --tonal:#3f3a8a; --on-tonal:#e2dfff; --ok:#7bd99b; --err:#ffb4ab; }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font:16px/1.4 system-ui, -apple-system, "Google Sans", Roboto, sans-serif; background:var(--bg); color:var(--on); }
+  header { position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:12px; padding:20px 20px 12px; background:var(--bg); }
+  h1 { font-size:28px; font-weight:700; margin:0; letter-spacing:-.5px; flex:1; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:99px; font-size:13px; font-weight:600; background:var(--surface2); color:var(--muted); }
+  .pill .dot { width:8px; height:8px; border-radius:50%; background:var(--ok); }
+  .pill.off .dot { background:var(--err); }
+  main { display:grid; gap:16px; padding:8px 16px 96px; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); max-width:1200px; margin:0 auto; }
+  .card { background:var(--surface); border-radius:var(--radius); padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04); }
+  .card h2 { margin:0; font-size:20px; display:flex; align-items:center; gap:10px; }
+  .card .sub { color:var(--muted); font-size:13px; margin:2px 0 14px; }
+  .grid { display:flex; flex-wrap:wrap; gap:8px; }
+  .btn { position:relative; display:inline-flex; align-items:center; border:0; border-radius:20px; background:var(--tonal); color:var(--on-tonal);
+         font:600 14px/1 inherit; padding:0; overflow:hidden; transition:border-radius .2s, transform .1s; }
+  .btn:active { border-radius:10px; transform:scale(.97); }
+  .btn .fire { border:0; background:none; color:inherit; font:inherit; padding:14px 14px 14px 18px; cursor:pointer; }
+  .btn .copy { border:0; background:none; color:inherit; opacity:.6; padding:14px 12px 14px 4px; cursor:pointer; font-size:14px; }
+  .btn.power { background:var(--primary); color:var(--on-primary); }
+  .btn.flash { animation:flash .4s; }
+  @keyframes flash { 50% { filter:brightness(1.35); } }
+  .ac { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; }
+  .ac .temp { font-size:40px; font-weight:700; min-width:96px; text-align:center; }
+  .chip { border:0; border-radius:12px; padding:8px 12px; background:var(--surface2); color:var(--on); font:600 13px inherit; cursor:pointer; }
+  .chip.on { background:var(--primary); color:var(--on-primary); }
+  .round { width:48px; height:48px; border-radius:50%; border:0; background:var(--tonal); color:var(--on-tonal); font-size:22px; cursor:pointer; }
+  .empty { grid-column:1/-1; text-align:center; color:var(--muted); padding:64px 0; font-size:18px; }
+  #toast { position:fixed; left:50%; bottom:24px; transform:translate(-50%, 120px); background:var(--on); color:var(--bg); padding:14px 20px;
+           border-radius:16px; font-weight:600; transition:transform .25s cubic-bezier(.2,1.4,.4,1); z-index:9; }
+  #toast.show { transform:translate(-50%, 0); }
+</style>
+</head>
+<body>
+<header>
+  <h1>BeamBridge</h1>
+  <span id="status" class="pill"><span class="dot"></span><span id="status-text">…</span></span>
+</header>
+<main id="devices"></main>
+<div id="toast"></div>
+<script>
+const $ = (s, el=document) => el.querySelector(s);
+const icons = { tv:"📺", ac:"❄️", set_top_box:"📡", other:"🎛️" };
+let toastTimer;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 1600);
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({ status:"error", error:r.statusText }));
+  if (!r.ok || j.status !== "ok") throw new Error(j.error || r.statusText);
+  return j;
+}
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch { const a = document.createElement("textarea"); a.value = text; document.body.append(a); a.select(); document.execCommand("copy"); a.remove(); }
+  toast("URL copied");
+}
+function el(tag, attrs={}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs)) k.startsWith("on") ? e.addEventListener(k.slice(2), v) : e.setAttribute(k, v);
+  e.append(...kids); return e;
+}
+function label(n) { return n.replace(/_/g, " ").replace(/^VOL /, "Vol ").replace(/^CH /, "Ch "); }
+
+function buttonEl(device, b) {
+  const wrap = el("span", { class: "btn" + (b.name.toUpperCase() === "POWER" ? " power" : "") });
+  const fire = el("button", { class:"fire", title:b.url, onclick: async () => {
+    wrap.classList.remove("flash"); void wrap.offsetWidth; wrap.classList.add("flash");
+    try { await api(b.url.replace(/^https?:\/\/[^/]+/, ""), { method:"POST" }); } catch (e) { toast(e.message); }
+  }}, label(b.name));
+  const cp = el("button", { class:"copy", title:"Copy URL", "aria-label":"Copy URL", onclick: () => copy(b.url) }, "⧉");
+  wrap.append(fire, cp); return wrap;
+}
+
+function acEl(device) {
+  const s = device.ac_state; const box = el("div", { class:"ac" });
+  const send = async (patch) => {
+    const q = new URLSearchParams({ device: device.id, ...patch });
+    try { const r = await api("/api/ac?" + q, { method:"POST" }); Object.assign(device.ac_state, r.state); render(lastDevices); }
+    catch (e) { toast(e.message); }
+  };
+  box.append(
+    el("button", { class:"round", onclick:() => send({ temp: s.temp - 1 }) }, "−"),
+    el("span", { class:"temp" }, s.temp + "°"),
+    el("button", { class:"round", onclick:() => send({ temp: s.temp + 1 }) }, "+"),
+    el("button", { class:"chip" + (s.power ? " on" : ""), onclick:() => send({ power: s.power ? "off" : "on" }) }, s.power ? "On" : "Off"),
+    ...["cool","auto","heat","fan","dry"].map(m => el("button", { class:"chip" + (s.mode === m ? " on" : ""), onclick:() => send({ mode:m }) }, m)),
+    ...["auto","low","medium","high"].map(f => el("button", { class:"chip" + (s.fan === f ? " on" : ""), onclick:() => send({ fan:f }) }, "fan " + f)),
+  );
+  return box;
+}
+
+let lastDevices = [];
+function render(devices) {
+  lastDevices = devices;
+  const root = $("#devices"); root.replaceChildren();
+  if (!devices.length) { root.append(el("div", { class:"empty" }, "No devices yet")); return; }
+  for (const d of devices) {
+    const card = el("section", { class:"card" },
+      el("h2", {}, icons[d.type] || "🎛️", d.name),
+      el("div", { class:"sub" }, [d.brand, d.id].filter(Boolean).join(" · ")));
+    if (d.ac_state) card.append(acEl(d));
+    const grid = el("div", { class:"grid" }); d.buttons.forEach(b => grid.append(buttonEl(d, b)));
+    card.append(grid); root.append(card);
+  }
+}
+async function load() {
+  try {
+    const [status, devices] = await Promise.all([api("/api/status"), fetch("/api/devices").then(r => r.json())]);
+    $("#status").classList.toggle("off", !status.ir_emitter);
+    $("#status-text").textContent = status.ir_emitter ? "Online" : "No IR emitter";
+    render(devices);
+  } catch (e) { $("#status").classList.add("off"); $("#status-text").textContent = "Offline"; }
+}
+load(); setInterval(load, 15000);
+</script>
+</body>
+</html>
