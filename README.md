@@ -17,18 +17,27 @@ runs the same steps and uploads the debug and release APKs as artifacts.
 
 ## API
 
-| Method | Endpoint | Parameters | Result |
-|---|---|---|---|
-| GET | `/` | | web dashboard |
-| GET | `/api/status` | | status, emitter present, base URL |
-| GET | `/api/devices` | | devices, buttons, invocation URLs |
-| GET | `/api/devices/{id}` | | one device |
-| GET/POST | `/api/blast` | `device`, `button` | `{"status":"ok"}` |
-| POST | `/api/raw` | `frequency` + `pattern` (comma separated µs), or `pronto`, or `protocol` + `code` [+ `bits`] | `{"status":"ok"}` |
-| GET/POST | `/api/ac` | `device`, optional `power` `mode` `temp` `fan` | new AC state |
+Everything the app can do is also available over HTTP, and the web UI at `/` uses only these routes. With
+password mode on (Settings), every route needs HTTP Basic auth.
 
-Parameters can be in the query string, a form body, or a JSON body. AC devices also expose the buttons
-`POWER_ON`, `POWER_OFF`, `TEMP_UP`, `TEMP_DOWN`, `MODE_*` and `FAN_*` through `/api/blast`.
+| Method | Path | Params | Notes |
+|---|---|---|---|
+| GET | `/api/status` | | status, emitter present, base URL |
+| GET/POST | `/api/blast` | `device`, `button` | press a key |
+| POST | `/api/raw` | `ir` free text (`NEC 0x20DF10EF 32`, raw µs list, Pronto), or `protocol`+`code`[+`bits`], `pronto`, `frequency`+`pattern` | send any code |
+| GET/POST | `/api/ac` | `device`, optional `power` `mode` `temp` `fan` | new AC state |
+| GET / POST | `/api/devices` | POST: `name`, optional `type`, `button`, `ir` | list / create custom device |
+| GET / POST / DELETE | `/api/devices/{id}` | POST: `name`, `archived` | read, rename/archive, delete |
+| POST / DELETE | `/api/devices/{id}/buttons[/{name}]` | `name`+`ir` (add/edit), `hidden=true/false`, `cell=N` (move on grid) | edit keys |
+| GET | `/api/catalog/brands` | `type`, `q` | pairing: brands |
+| GET | `/api/catalog/candidates` | `type`, `brand`, `on` | pairing: codes to try |
+| POST | `/api/catalog/test` | `type`, `brand`, `index`, `on` | pairing: send the test key |
+| GET | `/api/finder`, `/api/finder/keys` | | TV finder state, keys |
+| POST | `/api/finder/{start,stop,resume,page,test,accept,reset}` | `key`, `page`, `index`, `device`, `name` | TV finder |
+| GET / POST | `/api/settings` | `authMode`, `username`, `password`, `bindAddress`, `port`, `wakeLock`, `autoStart` | password is never returned |
+| GET | `/api/network`, `/api/network/check` | `address`, `port` | bind options, port availability |
+
+AC devices take `POWER_ON`, `POWER_OFF`, `TEMP_UP`, `TEMP_DOWN`, `MODE_*` and `FAN_*` through `/api/blast`.
 
 ## Datasets (`app/src/main/assets`)
 

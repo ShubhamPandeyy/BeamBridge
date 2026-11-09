@@ -12,7 +12,7 @@ class RealDataTest {
     @Test fun datasetsLoad() {
         assertEquals(emptyList(), datasets.problems)
         assertEquals(71, datasets.tv.manufacturers.size)
-        assertEquals(148, datasets.tv.remoteCount)
+        assertEquals(149, datasets.tv.remoteCount) // 148 + TCL RCA remote
         assertEquals(156, datasets.protocols.protocols.size)
         assertEquals(208, datasets.ac.remoteCount)
         println("protocol programs decoded: ${datasets.protocols.supportedCount}/156")
@@ -77,5 +77,20 @@ class RealDataTest {
         val b = IrCodeEncoder.encode(code, true)
         assertNotEquals(a, b)
         assertEquals(36_000, a.frequency)
+    }
+}
+
+class InputTest {
+    @Test fun freeTextCodes() {
+        assertEquals(IrCode.Hex("NEC", "0x20DF10EF", 32), CodeInput.parseText("NEC 0x20DF10EF 32"))
+        assertEquals(IrCode.Hex("NEC", "0x20DF10EF", 0), CodeInput.parseText("0x20DF10EF"))
+        assertTrue(CodeInput.parseText("0000 006D 0002 0000 0157 00AC 0015 0689") is IrCode.Pronto)
+        assertEquals(IrCode.Raw(38000, listOf(9000, 4500, 560)), CodeInput.parseText("9000, 4500, 560"))
+    }
+
+    @Test fun rcaMatchesTclLearnedTiming() {
+        val sig = IrCodeEncoder.encode(IrCode.Hex("RCA", "0xF2A0D5", 24))
+        assertEquals(listOf(4000, 4000, 500, 2000), sig.pattern.take(4))
+        assertEquals(2 + 48 + 1, sig.pattern.size)
     }
 }

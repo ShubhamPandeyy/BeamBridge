@@ -14,6 +14,8 @@ class Datasets(
         const val AC_FILE = "ac_remotes.json"
         const val PROTOCOL_FILE = "ir_protocols.json"
         const val LCN_DB_FILE = "lcndb.db"
+        /** Optional extra TV remotes in tv_remotes.json format (e.g. the TCL RCA remote), merged by brand name. */
+        const val EXTRA_TV_FILE = "extra_tv_remotes.json"
 
         val EMPTY = Datasets(TvCatalog.EMPTY, AcCatalog.EMPTY, ProtocolCatalog.EMPTY)
 
@@ -26,7 +28,9 @@ class Datasets(
                 return runCatching { parse(text) }.getOrElse { problems += "$name: ${it.message}"; empty }
             }
             return Datasets(
-                tv = read(TV_FILE, TvCatalog.EMPTY, TvCatalog::parse),
+                tv = read(TV_FILE, TvCatalog.EMPTY, TvCatalog::parse).merge(
+                    runCatching { open(EXTRA_TV_FILE)?.use { TvCatalog.parse(it.readBytes().toString(Charsets.UTF_8)) } }.getOrNull() ?: TvCatalog.EMPTY,
+                ),
                 ac = read(AC_FILE, AcCatalog.EMPTY, AcCatalog::parse),
                 protocols = read(PROTOCOL_FILE, ProtocolCatalog.EMPTY, ProtocolCatalog::parse),
                 problems = problems,

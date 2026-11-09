@@ -2,14 +2,14 @@ package app.beambridge.data
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import app.beambridge.core.data.Brand
 import app.beambridge.core.data.StandardKeys
+import app.beambridge.core.data.StbSource
 import app.beambridge.core.data.TvRemote
 import java.io.File
 
-data class StbProvider(val id: Int, val title: String, val type: String?)
-
-/** Read-only access to the DTH / cable provider remotes in assets/lcndb.db. Blocking: call from Dispatchers.IO. */
-class StbRepository(private val context: Context) {
+/** Read-only access to the DTH / cable provider remotes in assets/lcndb.db. Blocking: call off the main thread. */
+class StbRepository(private val context: Context) : StbSource {
     private val db: SQLiteDatabase? by lazy { open() }
 
     private fun open(): SQLiteDatabase? = runCatching {
@@ -21,44 +21,44 @@ class StbRepository(private val context: Context) {
         SQLiteDatabase.openDatabase(target.path, null, SQLiteDatabase.OPEN_READONLY)
     }.getOrNull()
 
-    val available: Boolean get() = db != null
-
-    fun providers(query: String): List<StbProvider> {
+    override fun providers(query: String): List<Brand> {
         val d = db ?: return emptyList()
-        val sql = "SELECT p.id, p.title, p.type FROM providers p " +
-            "WHERE EXISTS (SELECT 1 FROM provider_remotes pr WHERE pr.provider_id = p.id) AND p.title LIKE ? " +
-            "ORDER BY CASE p.type WHEN 'DTH' THEN 0 ELSE 1 END, p.title LIMIT 300"
+        val sql = "SELECT p.id, p.title, COUNT(pr.remote_id) FROM providers p JOIN provider_remotes pr ON pr.provider_id = p.id " +
+            "WHERE p.title LIKE ? GROUP BY p.id ORDER BY CASE p.type WHEN 'DTH' THEN 0 ELSE 1 END, p.title LIMIT 300"
         return d.rawQuery(sql, arrayOf("%${query.trim()}%")).use { c ->
-            buildList { while (c.moveToNext()) add(StbProvider(c.getInt(0), c.getString(1).orEmpty(), c.getString(2))) }
+            buildList { while (c.moveToNext()) add(Brand(c.getInt(0), c.getString(1).orEmpty(), c.getInt(2))) }
         }
     }
 
-    /** Candidate remotes of a provider, shaped like TV remotes so the same encoder and wizard code applies. */
-    fun remotes(providerId: Int): List<TvRemote> {
+    override fun remotes(providerId: Int): List<TvRemote> = load(
+        "SELECT DISTINCT r.id, r.protocol, r.length, r.toggle_mask FROM provider_remotes pr JOIN remotes r ON r.id = pr.remote_id " +
+            "WHERE pr.provider_id = ? ORDER BY r.id",
+        arrayOf(providerId.toString()),
+    )
+
+    private val all by lazy {
+        load("SELECT DISTINCT r.id, r.protocol, r.length, r.toggle_mask FROM provider_remotes pr JOIN remotes r ON r.id = pr.remote_id ORDER BY r.id", emptyArray())
+    }
+
+    override fun allRemotes(): List<TvRemote> = all
+
+    private data class Head(val id: Int, val protocol: Int, val length: Int, val mask: String)
+
+    private fun load(sql: String, args: Array<String>): List<TvRemote> {
         val d = db ?: return emptyList()
-        val heads = d.rawQuery(
-            "SELECT r.id, r.protocol, r.length, r.toggle_mask FROM provider_remotes pr " +
-                "JOIN remotes r ON r.id = pr.remote_id WHERE pr.provider_id = ? ORDER BY r.id",
-            arrayOf(providerId.toString()),
-        ).use { c -> buildList { while (c.moveToNext()) add(listOf(c.getInt(0), c.getInt(1), c.getInt(2), c.getString(3).orEmpty())) } }
-        return heads.distinctBy { it[0] }.mapNotNull { h ->
+        val heads = d.rawQuery(sql, args).use { c ->
+            buildList { while (c.moveToNext()) add(Head(c.getInt(0), c.getInt(1), c.getInt(2), c.getString(3).orEmpty())) }
+        }
+        return heads.mapNotNull { h ->
             val buttons = linkedMapOf<String, String>()
-            d.rawQuery("SELECT \"key\", code FROM key_codes WHERE remote_id = ? ORDER BY \"key\"", arrayOf(h[0].toString())).use { c ->
+            d.rawQuery("SELECT \"key\", code FROM key_codes WHERE remote_id = ? ORDER BY \"key\"", arrayOf(h.id.toString())).use { c ->
                 while (c.moveToNext()) {
-                    val key = c.getInt(0)
                     val code = c.getString(1) ?: continue
-                    buttons[StandardKeys.name(key) ?: "KEY_$key"] = code
+                    buttons[StandardKeys.name(c.getInt(0)) ?: "KEY_${c.getInt(0)}"] = code
                 }
             }
             if (buttons.isEmpty()) null
-            else TvRemote(
-                remoteId = h[0] as Int,
-                protocolId = h[1] as Int,
-                protocolName = "PROTOCOL_${h[1]}",
-                bitLength = h[2] as Int,
-                toggleMask = (h[3] as String).takeIf { it.isNotBlank() },
-                buttons = buttons,
-            )
+            else TvRemote(h.id, h.protocol, "PROTOCOL_${h.protocol}", h.length, h.mask.takeIf { it.isNotBlank() }, buttons)
         }
     }
 }

@@ -22,6 +22,7 @@ import app.beambridge.BeamBridgeApp
 import app.beambridge.MainActivity
 import app.beambridge.R
 import app.beambridge.core.server.BridgeHttpServer
+import app.beambridge.core.server.Net
 
 /**
  * Foreground service hosting the embedded HTTP server.
@@ -43,7 +44,10 @@ class BridgeService : Service() {
         override fun onAvailable(network: Network) = recheck()
         override fun onLost(network: Network) = recheck()
         override fun onLinkPropertiesChanged(network: Network, linkProperties: android.net.LinkProperties) = recheck()
-        private fun recheck() { handler.postDelayed({ if (server != null) startServer(force = false) }, 800) }
+        private fun recheck() {
+            handler.removeCallbacksAndMessages(null)
+            handler.postDelayed({ if (BridgeRuntime.status.value.running) startServer(force = false) }, 800)
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -69,19 +73,28 @@ class BridgeService : Service() {
     }
 
     private fun startServer(force: Boolean) {
-        val port = graph.settings.port.value
-        val ip = NetUtil.localIpv4()
-        if (!force && server != null && ip == boundIp && port == boundPort) return
+        val cfg = graph.settings.settings.value
+        val port = cfg.port
+        val host = Net.resolve(cfg.bindAddress)
+        if (!force && server != null && host == boundIp && port == boundPort) return
 
         stopServer()
-        val s = BridgeHttpServer(ip, port, graph.controller, graph.endpoints)
+        if (host == "") {
+            // A fixed address was chosen but is not on this phone right now (e.g. Wi-Fi off). Wait for the network callback.
+            releaseLocks()
+            BridgeRuntime.status.value = ServerStatus(running = true, error = "${cfg.bindAddress} unavailable")
+            notify("Waiting for ${cfg.bindAddress}")
+            return
+        }
+        val s = BridgeHttpServer(host, port, graph.bridge)
         try {
             s.startServer()
             server = s
-            boundIp = ip
+            boundIp = host
             boundPort = port
+            BridgeRuntime.bound = host to port
             acquireLocks()
-            val url = ip?.let { "http://$it:$port" }
+            val url = Net.publicHost(host)?.let { "http://$it:$port" }
             BridgeRuntime.status.value = ServerStatus(running = true, url = url)
             notify(url ?: "No Wi-Fi connection")
         } catch (e: Exception) {
@@ -94,6 +107,8 @@ class BridgeService : Service() {
     private fun stopServer() {
         runCatching { server?.stop() }
         server = null
+        boundIp = null
+        BridgeRuntime.bound = null
     }
 
     private fun shutdown() {
@@ -125,7 +140,7 @@ class BridgeService : Service() {
             val mode = if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY else WifiManager.WIFI_MODE_FULL_HIGH_PERF
             wifiLock = wm.createWifiLock(mode, "beambridge:wifi").apply { setReferenceCounted(false); acquire() }
         }
-        if (graph.settings.wakeLock.value && wakeLock == null) {
+        if (graph.settings.settings.value.wakeLock && wakeLock == null) {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "beambridge:server").apply { setReferenceCounted(false); acquire() }
         }

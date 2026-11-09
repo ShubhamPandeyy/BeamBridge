@@ -40,6 +40,11 @@ data class SavedDevice(
     val catalog: CatalogRef? = null,
     val buttons: List<SavedButton> = emptyList(),
     val acState: AcState? = null,
+    val archived: Boolean = false,
+    /** Buttons hidden from the remote layout (still reachable through the API). */
+    val hidden: List<String> = emptyList(),
+    /** User arrangement of the extra-keys grid: cell index → button name ("" = empty cell). Empty = default order. */
+    val grid: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
 ) {
     fun button(name: String): SavedButton? =

@@ -1,0 +1,186 @@
+[
+ {
+  "manufacturer_name": "TCL",
+  "manufacturer_id": 22,
+  "source": "github.com/zt-chen/hacs-tcl-infrared (TCL Google TV remote, learned)",
+  "remotes_count": 1,
+  "remotes": [
+   {
+    "remote_id": 900001,
+    "protocol_id": null,
+    "protocol_name": "RCA",
+    "bit_length": 24,
+    "gap_ms": 40,
+    "toggle_bit": false,
+    "toggle_mask": "",
+    "button_count": 41,
+    "buttons": {
+     "ASSISTANT": {
+      "key_id": -1,
+      "code": "0xf5c0a3"
+     },
+     "BACK": {
+      "key_id": 17,
+      "code": "0xf270d8"
+     },
+     "BLUE": {
+      "key_id": 29,
+      "code": "0xfd8027"
+     },
+     "CH_DOWN": {
+      "key_id": 14,
+      "code": "0xf2c0d3"
+     },
+     "CH_UP": {
+      "key_id": 13,
+      "code": "0xf2d0d2"
+     },
+     "0": {
+      "key_id": 0,
+      "code": "0xf300cf"
+     },
+     "1": {
+      "key_id": 1,
+      "code": "0xf310ce"
+     },
+     "2": {
+      "key_id": 2,
+      "code": "0xf320cd"
+     },
+     "3": {
+      "key_id": 3,
+      "code": "0xf330cc"
+     },
+     "4": {
+      "key_id": 4,
+      "code": "0xf340cb"
+     },
+     "5": {
+      "key_id": 5,
+      "code": "0xf350ca"
+     },
+     "6": {
+      "key_id": 6,
+      "code": "0xf360c9"
+     },
+     "7": {
+      "key_id": 7,
+      "code": "0xf370c8"
+     },
+     "8": {
+      "key_id": 8,
+      "code": "0xf380c7"
+     },
+     "9": {
+      "key_id": 9,
+      "code": "0xf390c6"
+     },
+     "DOWN": {
+      "key_id": 22,
+      "code": "0xf580a7"
+     },
+     "GREEN": {
+      "key_id": 27,
+      "code": "0xfe8017"
+     },
+     "HOME": {
+      "key_id": -1,
+      "code": "0xf080f7"
+     },
+     "INFO": {
+      "key_id": 20,
+      "code": "0xf3c0c3"
+     },
+     "SOURCE": {
+      "key_id": 36,
+      "code": "0xfa305c"
+     },
+     "LEFT": {
+      "key_id": 23,
+      "code": "0xf560a9"
+     },
+     "LIST": {
+      "key_id": -1,
+      "code": "0xf6109e"
+     },
+     "LIVE_TV": {
+      "key_id": -1,
+      "code": "0xf1a0e5"
+     },
+     "MENU": {
+      "key_id": 19,
+      "code": "0xfec013"
+     },
+     "VOL_MUTE": {
+      "key_id": 12,
+      "code": "0xf3f0c0"
+     },
+     "NETFLIX": {
+      "key_id": -1,
+      "code": "0xfef010"
+     },
+     "OK": {
+      "key_id": 25,
+      "code": "0xff400b"
+     },
+     "POWER": {
+      "key_id": 15,
+      "code": "0xf2a0d5"
+     },
+     "PRIME_VIDEO": {
+      "key_id": -1,
+      "code": "0xfc103e"
+     },
+     "PROFILE": {
+      "key_id": -1,
+      "code": "0xf8307c"
+     },
+     "RED": {
+      "key_id": 26,
+      "code": "0xf000ff"
+     },
+     "RIGHT": {
+      "key_id": 24,
+      "code": "0xf570a8"
+     },
+     "SETTINGS": {
+      "key_id": -1,
+      "code": "0xfcf030"
+     },
+     "TCL_CHANNEL": {
+      "key_id": -1,
+      "code": "0xfe301c"
+     },
+     "TCL_HOME": {
+      "key_id": -1,
+      "code": "0xf7f080"
+     },
+     "UP": {
+      "key_id": 21,
+      "code": "0xf590a6"
+     },
+     "VOL_DOWN": {
+      "key_id": 11,
+      "code": "0xf2e0d1"
+     },
+     "VOL_UP": {
+      "key_id": 10,
+      "code": "0xf2f0d0"
+     },
+     "WEB": {
+      "key_id": -1,
+      "code": "0xf6309c"
+     },
+     "YELLOW": {
+      "key_id": 28,
+      "code": "0xfe401b"
+     },
+     "YOUTUBE": {
+      "key_id": -1,
+      "code": "0xfe201d"
+     }
+    }
+   }
+  ]
+ }
+]

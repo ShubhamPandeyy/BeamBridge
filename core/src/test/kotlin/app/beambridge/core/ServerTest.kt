@@ -3,15 +3,26 @@ package app.beambridge.core
 import app.beambridge.core.data.*
 import app.beambridge.core.ir.*
 import app.beambridge.core.server.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.ServerSocket
 import java.net.URL
+import java.util.Base64
 import kotlin.test.*
 
-private class FakeEmitter : IrEmitter {
-    val sent = mutableListOf<IrSignal>()
+internal class FakeEmitter : IrEmitter {
+    val sent = java.util.Collections.synchronizedList(mutableListOf<IrSignal>())
     override val isAvailable = true
     override fun transmit(signal: IrSignal) { sent += signal }
+}
+
+private val realDatasets: Datasets by lazy {
+    val dir = listOf("../app/src/main/assets", "app/src/main/assets").map(::File).first { it.isDirectory }
+    Datasets.load { name -> File(dir, name).takeIf { it.exists() }?.inputStream() }
 }
 
 class ServerTest {
@@ -23,18 +34,28 @@ class ServerTest {
         )),
     ))
     private val port = ServerSocket(0).use { it.localPort }
-    private val controller = BridgeController(store, emitter) { Datasets.EMPTY }
-    private val server = BridgeHttpServer("127.0.0.1", port, controller, Endpoints { "http://192.168.1.50:8080" })
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val settings = InMemorySettingsStore()
+    private val controller = BridgeController(store, emitter) { realDatasets }
+    private val bridge = Bridge(
+        controller,
+        PairingService({ realDatasets }, { null }, controller),
+        Finder(controller, { realDatasets }, { null }, scope),
+        settings,
+        Endpoints { "http://192.168.1.50:8080" },
+    )
+    private val server = BridgeHttpServer("127.0.0.1", port, bridge)
 
     @BeforeTest fun up() = server.startServer()
-    @AfterTest fun down() = server.stop()
+    @AfterTest fun down() { server.stop(); scope.cancel() }
 
-    private fun call(method: String, path: String, body: String? = null, type: String = "application/x-www-form-urlencoded"): Pair<Int, String> {
+    private fun call(method: String, path: String, body: String? = null, type: String = "application/x-www-form-urlencoded", auth: String? = null): Pair<Int, String> {
         val c = URL("http://127.0.0.1:$port$path").openConnection() as HttpURLConnection
         c.requestMethod = method
+        auth?.let { c.setRequestProperty("Authorization", "Basic " + Base64.getEncoder().encodeToString(it.toByteArray())) }
         if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", type); c.outputStream.use { it.write(body.toByteArray()) } }
         val code = c.responseCode
-        val text = (if (code < 400) c.inputStream else c.errorStream).readBytes().decodeToString()
+        val text = ((if (code < 400) c.inputStream else c.errorStream)?.readBytes() ?: ByteArray(0)).decodeToString()
         return code to text
     }
 
@@ -57,8 +78,9 @@ class ServerTest {
         assertEquals(200, call("POST", "/api/raw", "frequency=38000&pattern=9000,4500,560,560").first)
         assertEquals(200, call("POST", "/api/raw", """{"frequency":38000,"pattern":[9000,4500,560]}""", "application/json").first)
         assertEquals(200, call("POST", "/api/raw", "protocol=NEC&code=0x00FF00FF&bits=32").first)
+        assertEquals(200, call("POST", "/api/raw", "ir=RCA 0xF2A0D5").first)
         assertEquals(400, call("POST", "/api/raw", "frequency=38000").first)
-        assertEquals(3, emitter.sent.size)
+        assertEquals(4, emitter.sent.size)
         assertEquals(listOf(9000, 4500, 560, 560), emitter.sent[0].pattern.toList())
     }
 
@@ -66,5 +88,67 @@ class ServerTest {
         val (code, body) = call("GET", "/")
         assertEquals(200, code)
         assertTrue("BeamBridge" in body)
+    }
+
+    @Test fun customDeviceButtonsHideArchiveDelete() {
+        val (c1, b1) = call("POST", "/api/devices", "type=other&name=Projector&button=Power&ir=NEC 0x20DF10EF 32")
+        assertEquals(201, c1, b1)
+        assertTrue("\"id\":\"projector\"" in b1)
+        assertEquals(201, call("POST", "/api/devices/projector/buttons", "name=input&ir=9000,4500,560,560").first)
+        assertEquals(200, call("GET", "/api/blast?device=projector&button=INPUT").first)
+        assertEquals(400, call("POST", "/api/devices/projector/buttons", "name=bad").first)
+        assertTrue("\"hidden\":true" in call("POST", "/api/devices/projector/buttons/INPUT", "hidden=true").second)
+        call("POST", "/api/devices/projector/buttons", "name=a&ir=0x1")
+        call("POST", "/api/devices/projector/buttons", "name=b&ir=0x2")
+        call("POST", "/api/devices/projector/buttons/INPUT", "hidden=false")
+        val moved = call("POST", "/api/devices/projector/buttons/B", "cell=6").second
+        assertTrue("\"extras\":[\"INPUT\",\"A\",\"\",\"\",\"\",\"\",\"B\"]" in moved, moved)
+        assertTrue("\"archived\":true" in call("POST", "/api/devices/projector", "archived=true").second)
+        assertEquals(200, call("DELETE", "/api/devices/projector/buttons/INPUT").first)
+        assertEquals(200, call("DELETE", "/api/devices/projector").first)
+        assertNull(store.get("projector"))
+    }
+
+    @Test fun pairingThroughApi() {
+        val (_, brands) = call("GET", "/api/catalog/brands?type=tv&q=tcl")
+        assertTrue("\"name\":\"TCL\"" in brands, brands)
+        val (_, cands) = call("GET", "/api/catalog/candidates?type=tv&brand=22&on=false")
+        assertEquals(4, Regex("\"index\"").findAll(cands).count(), cands) // 3 dataset remotes + the RCA remote from the TCL repo
+        assertTrue("\"test_key\":\"VOL_UP\"" in call("GET", "/api/catalog/candidates?type=tv&brand=22&on=true").second)
+        assertEquals(200, call("POST", "/api/catalog/test", "type=tv&brand=22&index=3&on=false").first)
+        val (c, body) = call("POST", "/api/devices", "type=tv&brand=22&index=3&name=Bedroom TV")
+        assertEquals(201, c, body)
+        assertTrue("YOUTUBE" in body)
+    }
+
+    @Test fun passwordAuth() {
+        assertEquals(200, call("POST", "/api/settings", "auth=password&username=me&password=secret").first)
+        assertEquals(401, call("GET", "/api/devices").first)
+        assertEquals(401, call("GET", "/api/devices", auth = "me:wrong").first)
+        assertEquals(200, call("GET", "/api/devices", auth = "me:secret").first)
+        val (_, s) = call("GET", "/api/settings", auth = "me:secret")
+        assertFalse("secret" in s, "password must never be returned")
+        assertEquals(400, call("POST", "/api/settings", "password=x", auth = "me:secret").first) // too short
+    }
+
+    @Test fun networkCheck() {
+        val (code, body) = call("GET", "/api/network/check?address=0.0.0.0&port=$port")
+        assertEquals(200, code)
+        assertTrue("\"available\":false" in body, body) // our own test server holds this port
+    }
+
+    @Test fun finderRunsStopsAndAccepts() {
+        store.add(SavedDevice("mystery", "Mystery TV", DeviceType.OTHER))
+        call("POST", "/api/finder/start", "key=POWER&interval=300")
+        Thread.sleep(1100)
+        val (_, stopped) = call("POST", "/api/finder/stop")
+        assertTrue("\"running\":false" in stopped, stopped)
+        val sent = Regex("\"sent\":(\\d+)").find(stopped)!!.groupValues[1].toInt()
+        assertTrue(sent >= 2, stopped)
+        assertTrue("\"window\":[{" in stopped)
+        val idx = Regex("\"index\":(\\d+)").find(stopped)!!.groupValues[1]
+        assertEquals(200, call("POST", "/api/finder/test", "index=$idx").first)
+        assertEquals(200, call("POST", "/api/finder/accept", "device=mystery&index=$idx&name=power").first)
+        assertNotNull(store.get("mystery")!!.button("POWER"))
     }
 }

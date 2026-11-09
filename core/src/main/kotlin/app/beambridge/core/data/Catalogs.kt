@@ -66,6 +66,16 @@ class TvCatalog(val manufacturers: List<Manufacturer<TvRemote>>) {
     fun brand(id: Int) = manufacturers.firstOrNull { it.id == id }
     fun remote(manufacturerId: Int, remoteId: Int) = brand(manufacturerId)?.remotes?.firstOrNull { it.remoteId == remoteId }
 
+    /** Adds [extra] remotes, joining brands by name (case-insensitive). */
+    fun merge(extra: TvCatalog): TvCatalog {
+        val byName = manufacturers.associateBy { it.name.lowercase() }.toMutableMap()
+        for (m in extra.manufacturers) {
+            val cur = byName[m.name.lowercase()]
+            byName[m.name.lowercase()] = if (cur == null) m else cur.copy(remotes = cur.remotes + m.remotes.filter { r -> cur.remotes.none { it.remoteId == r.remoteId } })
+        }
+        return TvCatalog(byName.values.sortedBy { it.name.lowercase() })
+    }
+
     companion object {
         val EMPTY = TvCatalog(emptyList())
 
@@ -112,7 +122,14 @@ object StandardKeys {
     /** Keys the pairing wizard prefers for "did the appliance react?" checks, in order. */
     val TEST_KEYS = listOf("POWER", "VOL_MUTE", "VOL_UP", "CH_UP", "MENU")
 
-    private val order = listOf("POWER", "SOURCE", "VOL_UP", "VOL_DOWN", "VOL_MUTE", "CH_UP", "CH_DOWN",
+    /** Keys used to test a remote when the appliance is already on: something visible but harmless. */
+    val ON_TEST_KEYS = listOf("VOL_UP", "VOL_MUTE", "CH_UP", "MENU", "INFO", "VOL_DOWN", "SOURCE")
+
+    /** Functions offered by the TV finder, in display order. */
+    val FINDER_KEYS = listOf("POWER", "VOL_UP", "VOL_DOWN", "VOL_MUTE", "CH_UP", "CH_DOWN", "UP", "DOWN", "LEFT", "RIGHT",
+        "OK", "BACK", "HOME", "MENU", "SOURCE", "EXIT", "INFO", "GUIDE") + (0..9).map { "$it" }
+
+    private val order = listOf("POWER", "HOME", "SOURCE", "VOL_UP", "VOL_DOWN", "VOL_MUTE", "CH_UP", "CH_DOWN",
         "UP", "DOWN", "LEFT", "RIGHT", "OK", "SELECT", "BACK", "EXIT", "MENU", "GUIDE", "INFO", "OPTIONS",
         "PLAY", "PAUSE", "STOP", "REWIND", "FAST_FORWARD", "PREVIOUS", "NEXT", "RECORD",
         "RED", "GREEN", "YELLOW", "BLUE") + (0..9).map { "$it" }

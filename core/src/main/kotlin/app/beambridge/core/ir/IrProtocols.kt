@@ -37,6 +37,8 @@ sealed class IrProtocol(val key: String, val defaultFrequency: Int, val defaultB
     data object Samsung : PulseDistance("SAMSUNG", 38_000, 32, 4500, 4500, 560, 560, 1690)
     data object Jvc : PulseDistance("JVC", 38_000, 16, 8400, 4200, 526, 524, 1574)
     data object Panasonic : PulseDistance("PANASONIC", 37_000, 48, 3456, 1728, 432, 432, 1296)
+    /** RCA (used by TCL): 4 ms / 4 ms leader, 500 µs marks, 1000 µs (0) or 2000 µs (1) spaces, 24 bits MSB first. */
+    data object Rca : PulseDistance("RCA", 38_000, 24, 4000, 4000, 500, 1000, 2000)
     data object Sharp : PulseDistance("SHARP", 38_000, 15, 0, 0, 320, 680, 1680)
 
     /** Sony SIRC: pulse-width, 12/15/20 bits, frame sent 3× on a 45 ms period. */
@@ -89,7 +91,7 @@ sealed class IrProtocol(val key: String, val defaultFrequency: Int, val defaultB
     }
 
     companion object {
-        val all: List<IrProtocol> by lazy { listOf(Nec, Samsung, Sony, Rc5, Rc6, Jvc, Panasonic, Sharp) }
+        val all: List<IrProtocol> by lazy { listOf(Nec, Samsung, Sony, Rc5, Rc6, Jvc, Panasonic, Sharp, Rca) }
 
         /** Built-in encoder for a dataset protocol (by name, falling back to the numeric ids 0-8). Null → needs a program. */
         fun resolve(name: String?, id: Int? = null): IrProtocol? {
@@ -102,6 +104,7 @@ sealed class IrProtocol(val key: String, val defaultFrequency: Int, val defaultB
                 "PANASONIC" in n || "KASEIKYO" in n -> Panasonic
                 "JVC" in n -> Jvc
                 "SHARP" in n -> Sharp
+                n == "RCA" || n.startsWith("RCA_") -> Rca
                 n == "NEC" || n.startsWith("NEC") -> Nec
                 n.startsWith("PROTOCOL_") || n.isEmpty() -> when (id) {
                     0 -> Nec; 1 -> Rc5; 2 -> Rc6; 6 -> Samsung; 7 -> Sony; 8 -> Panasonic

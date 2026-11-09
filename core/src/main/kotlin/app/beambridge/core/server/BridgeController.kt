@@ -49,8 +49,8 @@ class BridgeController(
         }
 
     /** One-off AC frame for a catalog remote that is not saved yet (pairing wizard). */
-    fun testAc(remote: AcRemote, state: AcState): SendResult = try {
-        transmit(AcCodec.signal(remote, state))
+    fun testAc(remote: AcRemote, state: AcState, previous: AcState? = null): SendResult = try {
+        transmit(AcCodec.signal(remote, state, previous))
     } catch (e: IrEncodingException) {
         SendResult.Failed(e.message ?: "AC encoding failed")
     }
@@ -64,6 +64,9 @@ class BridgeController(
     fun buttonNames(device: SavedDevice): List<String> =
         if (device.type == DeviceType.AC) AcCodec.actions(acRemote(device)) + device.buttons.map { it.name }
         else device.buttons.sortedBy { StandardKeys.sortKey(it.name) }.map { it.name }
+
+    /** Visible buttons only (hidden ones stay callable through the API). */
+    fun visibleButtons(device: SavedDevice): List<String> = buttonNames(device).filterNot { n -> device.hidden.any { it.equals(n, true) } }
 
     fun blast(deviceId: String, buttonName: String): SendResult {
         val device = store.get(deviceId) ?: return SendResult.NotFound("Unknown device '$deviceId'")

@@ -1,97 +1,70 @@
 package app.beambridge.ui
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.PowerSettingsNew
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material3.Button
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.ripple
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.beambridge.MainViewModel
 import app.beambridge.WizardState
 import app.beambridge.WizardStep
 import app.beambridge.core.data.DeviceType
-import app.beambridge.core.data.Datasets
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WizardScreen(vm: MainViewModel, wizard: WizardState, datasets: Datasets, snackbar: SnackbarHostState) {
+fun WizardScreen(vm: MainViewModel, w: WizardState) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(wizard.type?.label ?: "New device") },
+                title = {
+                    Text(when (w.step) {
+                        WizardStep.Type -> "Add a device"
+                        WizardStep.Custom -> "Custom device"
+                        WizardStep.Brand -> "Pick the brand"
+                        WizardStep.Power -> "Is it on right now?"
+                        WizardStep.Test -> "Test codes"
+                        WizardStep.Name -> "Name it"
+                    })
+                },
                 navigationIcon = { IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { padding ->
-        AnimatedContent(
-            targetState = wizard.step,
-            modifier = Modifier.fillMaxSize().padding(padding),
-            transitionSpec = {
-                val forward = targetState.ordinal > initialState.ordinal
-                (slideInHorizontally { if (forward) it / 4 else -it / 4 } + fadeIn()) togetherWith
-                    (slideOutHorizontally { if (forward) -it / 4 else it / 4 } + fadeOut())
-            },
-            label = "wizard-step",
-        ) { step ->
-            when (step) {
-                WizardStep.Type -> TypeStep(vm)
-                WizardStep.Brand -> BrandStep(vm, wizard, datasets)
-                WizardStep.Test -> TestStep(vm, wizard)
-                WizardStep.Name -> NameStep(vm, wizard)
+    ) { pad ->
+        val steps = WizardStep.entries.filter { it != WizardStep.Custom }
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            if (w.step != WizardStep.Custom) LinearProgressIndicator(
+                progress = { (steps.indexOf(w.step) + 1f) / steps.size },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            )
+            AnimatedContent(w.step, transitionSpec = { (slideInHorizontally { it / 4 } + fadeIn()) togetherWith fadeOut() }, label = "step") { step ->
+                when (step) {
+                    WizardStep.Type -> TypeStep(vm)
+                    WizardStep.Custom -> CustomStep(vm)
+                    WizardStep.Brand -> BrandStep(vm, w)
+                    WizardStep.Power -> PowerStep(vm, w)
+                    WizardStep.Test -> TestStep(vm, w)
+                    WizardStep.Name -> NameStep(vm, w)
+                }
             }
         }
     }
@@ -99,108 +72,118 @@ fun WizardScreen(vm: MainViewModel, wizard: WizardState, datasets: Datasets, sna
 
 @Composable
 private fun TypeStep(vm: MainViewModel) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        listOf(DeviceType.TV, DeviceType.AC, DeviceType.SET_TOP_BOX).forEach { type ->
-            ElevatedCard(onClick = { vm.pickType(type) }, shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.fillMaxWidth().weight(1f)) {
-                Row(Modifier.fillMaxSize().padding(24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    IconBadge(deviceIcon(type), size = 72.dp)
-                    Text(type.label, style = MaterialTheme.typography.headlineSmall)
-                }
-            }
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("What are you controlling?", style = MaterialTheme.typography.titleMedium)
+        listOf(
+            Triple(DeviceType.TV, "TV", "Codes from 70+ brands"),
+            Triple(DeviceType.AC, "Air conditioner", "Temperature, mode and fan"),
+            Triple(DeviceType.SET_TOP_BOX, "Set-top box", "DTH and cable providers"),
+            Triple(DeviceType.OTHER, "Custom device", "Name it and add your own IR codes"),
+        ).forEach { (type, title, sub) ->
+            OptionRow(deviceIcon(type), title, sub) { vm.pickType(type) }
         }
     }
 }
 
+/** Standard-height selectable row used across the wizard. */
 @Composable
-private fun BrandStep(vm: MainViewModel, wizard: WizardState, datasets: Datasets) {
-    val providers by vm.stbProviders.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize()) {
+private fun OptionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String?, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            IconBadge(icon, size = 44.dp)
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CustomStep(vm: MainViewModel) {
+    var name by remember { mutableStateOf("") }
+    var key by remember { mutableStateOf("Power") }
+    var code by remember { mutableStateOf("") }
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        OutlinedTextField(name, { name = it }, label = { Text("Device name") }, placeholder = { Text("e.g. Bedroom fan") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Text("First key (optional, you can add more later)", style = MaterialTheme.typography.titleSmall)
+        OutlinedTextField(key, { key = it }, label = { Text("Key name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(
-            wizard.query, vm::setQuery,
-            leadingIcon = { Icon(Icons.Rounded.Search, null) },
-            singleLine = true, shape = RoundedCornerShape(28.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            code, { code = it }, label = { Text("IR code") }, placeholder = { Text("NEC 0x20DF10EF 32") },
+            supportingText = { Text("Protocol + hex, raw µs timings, or Pronto hex") },
+            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace), minLines = 2, modifier = Modifier.fillMaxWidth(),
         )
-        val q = wizard.query.trim()
-        LazyColumn(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-            when (wizard.type) {
-                DeviceType.AC -> items(datasets.ac.manufacturers.filter { m -> m.name.contains(q, true) && m.remotes.any { it.supported } }, key = { it.id }) { m ->
-                    BrandRow(m.name, m.remotes.count { it.supported }) { vm.pickAcBrand(m.id, m.name) }
-                }
-                DeviceType.SET_TOP_BOX -> items(providers, key = { it.id }) { p ->
-                    BrandRow(p.title, null) { vm.pickProvider(p) }
-                }
-                else -> items(datasets.tv.manufacturers.filter { it.name.contains(q, true) }, key = { it.id }) { m ->
-                    BrandRow(m.name, m.remotes.size) { vm.pickTvBrand(m.id, m.name) }
-                }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            EXAMPLES.forEach { (label, value) -> AssistChip(onClick = { code = value }, label = { Text(label) }) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = { vm.parseCode(code)?.let(vm::sendCode) }, enabled = code.isNotBlank()) { Text("Test") }
+            Button(onClick = { vm.createCustom(name, key, code) }, enabled = name.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Create device") }
+        }
+    }
+}
+
+@Composable
+private fun BrandStep(vm: MainViewModel, w: WizardState) {
+    Column(Modifier.padding(horizontal = 24.dp)) {
+        OutlinedTextField(
+            w.query, vm::setQuery, leadingIcon = { Icon(Icons.Rounded.Search, null) }, placeholder = { Text("Search brands or providers") },
+            singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+        )
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(bottom = 32.dp)) {
+            items(w.brands, key = { it.id }) { b ->
+                ListItem(
+                    headlineContent = { Text(b.name) },
+                    supportingContent = { Text("${b.remotes} remote${if (b.remotes == 1) "" else "s"}") },
+                    trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
+                    modifier = Modifier.clip(MaterialTheme.shapes.large).clickable { vm.pickBrand(b) },
+                )
+            }
+            if (w.brands.isEmpty()) item {
+                Text("No matches. Try the TV finder from a custom device, or add codes by hand.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
 
 @Composable
-private fun BrandRow(title: String, count: Int?, onClick: () -> Unit) {
-    ListItem(
-        headlineContent = { Text(title) },
-        trailingContent = { if (count != null && count > 1) Text("$count", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
-        modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick),
-    )
+private fun PowerStep(vm: MainViewModel, w: WizardState) {
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Point the phone at your ${w.brand?.name ?: ""} device. We pick a safe test key based on its state.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OptionRow(Icons.Rounded.PowerSettingsNew, "It's off", "We'll send Power and it should turn on") { vm.setDeviceOn(false) }
+        OptionRow(Icons.AutoMirrored.Rounded.VolumeUp, "It's on", "We'll send Volume up (or another harmless key)") { vm.setDeviceOn(true) }
+        if (w.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+    }
 }
 
 @Composable
-private fun TestStep(vm: MainViewModel, wizard: WizardState) {
+private fun TestStep(vm: MainViewModel, w: WizardState) {
+    val c = w.candidates.getOrNull(w.index) ?: return
+    val key = vm.testKey() ?: "POWER"
     Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
+        Modifier.verticalScroll(rememberScrollState()).padding(24.dp).fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Text(wizard.brandName, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
-        ElevatedCard(shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                TestButton(onClick = vm::sendTest)
-                Text("${wizard.index + 1} / ${wizard.candidates.size}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        Text("Code ${w.index + 1} of ${w.candidates.size}", style = MaterialTheme.typography.titleMedium)
+        Text(c.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        RemoteKey(key, onPress = vm::sendTest, onLongPress = vm::sendTest, size = 120.dp, container = MaterialTheme.colorScheme.primary, content = MaterialTheme.colorScheme.onPrimary)
+        Text("Tap to send ${prettyName(key)}", style = MaterialTheme.typography.bodyLarge)
+        Text("Did the device respond?", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = vm::nextCandidate, modifier = Modifier.weight(1f).height(52.dp)) { Text("No, try next") }
+            Button(onClick = vm::confirmWorked, modifier = Modifier.weight(1f).height(52.dp)) { Text("Yes, it worked") }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = vm::confirmWorked, modifier = Modifier.weight(1f).height(64.dp)) {
-                Icon(Icons.Rounded.Check, null); Text("Yes, it worked", Modifier.padding(start = 8.dp))
-            }
-            FilledTonalButton(onClick = vm::nextCandidate, modifier = Modifier.weight(1f).height(64.dp)) {
-                Icon(Icons.Rounded.SkipNext, null); Text("Try Next Code", Modifier.padding(start = 8.dp))
-            }
-        }
+        if (w.candidates.size > 1) TextButton(onClick = vm::previousCandidate) { Text("Back to previous code") }
     }
 }
 
-/** Oversized test button; its corners tighten with a spring while pressed. */
 @Composable
-private fun TestButton(onClick: () -> Unit) {
-    val source = remember { MutableInteractionSource() }
-    val pressed by source.collectIsPressedAsState()
-    val corner by animateDpAsState(if (pressed) 40.dp else 96.dp, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "test-corner")
-    Box(
-        Modifier
-            .size(192.dp)
-            .clip(RoundedCornerShape(corner))
-            .background(MaterialTheme.colorScheme.primary)
-            .clickable(interactionSource = source, indication = ripple(), onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { Icon(Icons.Rounded.PowerSettingsNew, "Test", Modifier.size(88.dp), tint = MaterialTheme.colorScheme.onPrimary) }
-}
-
-@Composable
-private fun NameStep(vm: MainViewModel, wizard: WizardState) {
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        IconBadge(deviceIcon(wizard.type ?: DeviceType.TV), size = 88.dp)
-        OutlinedTextField(
-            wizard.name, vm::setName, singleLine = true, shape = RoundedCornerShape(28.dp),
-            modifier = Modifier.fillMaxWidth().animateContentSize(),
-        )
-        ExtendedFloatingActionButton(
-            onClick = vm::saveWizardDevice,
-            icon = { Icon(Icons.Rounded.Check, null) },
-            text = { Text("Save") },
-        )
+private fun NameStep(vm: MainViewModel, w: WizardState) {
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        OutlinedTextField(w.name, vm::setName, label = { Text("Device name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Button(onClick = vm::saveWizardDevice, enabled = w.name.isNotBlank(), modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Save device") }
     }
 }
