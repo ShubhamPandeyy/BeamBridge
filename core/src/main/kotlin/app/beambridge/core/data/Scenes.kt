@@ -35,12 +35,11 @@ class InMemorySceneStore : SceneStore {
 class JsonFileSceneStore(private val file: File) : SceneStore {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true }
     private val serializer = ListSerializer(Scene.serializer())
-    private val state = MutableStateFlow(runCatching { if (file.exists()) json.decodeFromString(serializer, file.readText()) else null }.getOrNull().orEmpty())
+    private val state = MutableStateFlow(SafeFile.read(file, emptyList()) { json.decodeFromString(serializer, it) })
     override val scenes: StateFlow<List<Scene>> = state.asStateFlow()
 
     private fun commit(list: List<Scene>) {
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(json.encodeToString(serializer, list)); tmp.renameTo(file)
+        SafeFile.write(file, json.encodeToString(serializer, list))
         state.value = list
     }
 

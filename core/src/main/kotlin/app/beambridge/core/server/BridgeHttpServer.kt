@@ -27,23 +27,53 @@ class BridgeHttpServer(
     override fun serve(session: IHTTPSession): Response = try {
         when {
             session.method == Method.OPTIONS -> cors(newFixedLengthResponse(Response.Status.NO_CONTENT, MIME_PLAINTEXT, ""))
+            // A web page on another site must never drive the bridge through the user's browser (CSRF).
+            crossSite(session) && changesState(session) -> cors(error(Response.Status.FORBIDDEN, "Cross-site request blocked"))
             !authorized(session) -> cors(newFixedLengthResponse(Response.Status.UNAUTHORIZED, "application/json", """{"status":"error","error":"Login required"}""")
                 .apply { addHeader("WWW-Authenticate", "Basic realm=\"BeamBridge\", charset=\"UTF-8\"") })
+            !bridge.isReady() && session.uri.startsWith("/api/") && session.uri.trimEnd('/') != "/api/status" ->
+                cors(error(Response.Status.SERVICE_UNAVAILABLE, "Still loading the code database, try again in a moment").apply { addHeader("Retry-After", "2") })
+            session.method == Method.GET && isAction(session.uri) && !bridge.settings.settings.value.allowGetActions ->
+                cors(error(Response.Status.METHOD_NOT_ALLOWED, "GET actions are turned off in Settings. Use POST"))
             else -> cors(route(session))
         }
     } catch (e: Exception) {
         cors(error(Response.Status.INTERNAL_ERROR, e.message ?: e.javaClass.simpleName))
     }
 
+    /** Last header that passed, keyed to the hash it was checked against (PBKDF2 is too slow to run per request). */
+    @Volatile private var verified: Pair<String, String>? = null
+
     private fun authorized(s: IHTTPSession): Boolean {
         val cfg = bridge.settings.settings.value
         if (cfg.authMode == AuthMode.GUEST) return true
         val header = s.headers["authorization"] ?: return false
         if (!header.startsWith("Basic ", true)) return false
+        verified?.let { (h, hash) -> if (hash == cfg.passwordHash && constantTimeEquals(h, header)) return true }
         val decoded = runCatching { String(Base64.getDecoder().decode(header.substring(6).trim()), Charsets.UTF_8) }.getOrNull() ?: return false
         val user = decoded.substringBefore(':')
         val pass = decoded.substringAfter(':', "")
-        return constantTimeEquals(user, cfg.username) and constantTimeEquals(pass, cfg.password)
+        val ok = constantTimeEquals(user, cfg.username) and cfg.checkPassword(pass)
+        if (ok) verified = header to cfg.passwordHash
+        return ok
+    }
+
+    /** Browsers mark requests a page from another site makes; scripts, curl and Home Assistant send neither header. */
+    private fun crossSite(s: IHTTPSession): Boolean {
+        val site = s.headers["sec-fetch-site"]?.lowercase()
+        if (site == "cross-site" || site == "same-site") return true
+        val origin = s.headers["origin"] ?: return false
+        val host = s.headers["host"] ?: return true
+        return runCatching { java.net.URI(origin).authority }.getOrNull()?.equals(host, true) != true
+    }
+
+    private fun changesState(s: IHTTPSession) = s.method != Method.GET || isAction(s.uri)
+
+    /** Endpoints that transmit IR or drive the finder, even over GET. */
+    private fun isAction(uri: String): Boolean {
+        val u = uri.trimEnd('/')
+        return u == "/api/blast" || u == "/api/raw" || u == "/api/ac" || u == "/api/scene" ||
+            (u.startsWith("/api/scenes/") && u.endsWith("/run")) || (u.startsWith("/api/finder/") && u != "/api/finder/keys")
     }
 
     private fun constantTimeEquals(a: String, b: String) =
@@ -98,14 +128,14 @@ class BridgeHttpServer(
             // scenes
             path == "/api/scenes" && m == Method.GET -> ok(JsonArray(bridge.scenes.scenes.value.map(::sceneJson)))
             path == "/api/scenes" && m == Method.POST -> saveScene(null, s)
-            path == "/api/scene" -> only(m, Method.GET, Method.POST) ?: params(s).let { runScene(it["name"] ?: it["id"]) }
+            path == "/api/scene" -> only(m, Method.GET, Method.POST) ?: params(s).let { runScene(it["name"] ?: it["id"], it["wait"]) }
             parts.size == 3 && parts[1] == "scenes" -> when (m) {
                 Method.GET -> bridge.scenes.get(parts[2])?.let { ok(sceneJson(it)) } ?: error(Response.Status.NOT_FOUND, "Unknown scene '${parts[2]}'")
                 Method.POST, Method.PUT -> saveScene(parts[2], s)
                 Method.DELETE -> if (bridge.scenes.remove(parts[2])) ok(buildJsonObject { put("status", "ok") }) else error(Response.Status.NOT_FOUND, "Unknown scene '${parts[2]}'")
                 else -> error(Response.Status.METHOD_NOT_ALLOWED, "Use GET/POST/DELETE")
             }
-            parts.size == 4 && parts[1] == "scenes" && parts[3] == "run" -> only(m, Method.POST, Method.GET) ?: runScene(parts[2])
+            parts.size == 4 && parts[1] == "scenes" && parts[3] == "run" -> only(m, Method.POST, Method.GET) ?: runScene(parts[2], params(s)["wait"])
 
             // settings
             path == "/api/settings" && m == Method.GET -> ok(settingsJson())
@@ -123,6 +153,7 @@ class BridgeHttpServer(
         put("status", "ok")
         put("app", "BeamBridge")
         put("ir_emitter", controller.emitterAvailable)
+        put("ready", bridge.isReady())
         put("base_url", endpoints.base())
         put("devices", bridge.store.devices.value.size)
         put("auth", bridge.settings.settings.value.authMode.name.lowercase())
@@ -162,8 +193,6 @@ class BridgeHttpServer(
                 fan = p["fan"]?.lowercase() ?: cur.fan,
             )
         }
-        if (res is SendResult.Failed && (res.message.startsWith("Unsupported") || res.message.startsWith("Temperature")))
-            return error(Response.Status.BAD_REQUEST, res.message)
         return result(res) {
             put("device", device)
             state?.let { put("state", acJson(it)) }
@@ -194,11 +223,13 @@ class BridgeHttpServer(
         val d = bridge.store.get(id) ?: return error(Response.Status.NOT_FOUND, "Unknown device '$id'")
         return when (m) {
             Method.GET -> ok(deviceJson(d))
-            Method.DELETE -> { bridge.store.remove(d.id); ok(buildJsonObject { put("status", "ok") }) }
+            Method.DELETE -> { val fixed = bridge.deleteDevice(d.id); ok(buildJsonObject { put("status", "ok"); put("scenes_updated", fixed) }) }
             Method.POST, Method.PUT -> {
+                val archived = p["archived"]?.let { it.strictBool() ?: return error(Response.Status.BAD_REQUEST, "Invalid archived '$it'. Use true or false") }
+                val swipe = p["swipe"]?.let { it.strictBool() ?: return error(Response.Status.BAD_REQUEST, "Invalid swipe '$it'. Use true or false") }
                 p["name"]?.takeIf { it.isNotBlank() }?.let { n -> bridge.store.update(d.id) { it.copy(name = n.trim()) } }
-                p["archived"]?.let { bridge.setArchived(d.id, it.toBool()) }
-                p["swipe"]?.let { bridge.setSwipe(d.id, it.toBool()) }
+                archived?.let { bridge.setArchived(d.id, it) }
+                swipe?.let { bridge.setSwipe(d.id, it) }
                 if (p["grid_cols"] != null || p["grid_rows"] != null) {
                     val c = p["grid_cols"]?.let { it.toIntOrNull() ?: return error(Response.Status.BAD_REQUEST, "Invalid grid_cols '$it'") }
                     val r = p["grid_rows"]?.let { it.toIntOrNull() ?: return error(Response.Status.BAD_REQUEST, "Invalid grid_rows '$it'") }
@@ -216,11 +247,13 @@ class BridgeHttpServer(
             m == Method.DELETE && button != null ->
                 if (bridge.store.removeButton(d.id, button)) ok(deviceJson(bridge.store.get(d.id)!!))
                 else error(Response.Status.NOT_FOUND, "Device '${d.id}' has no custom button '$button'")
-            m == Method.POST && button != null && p["hidden"] != null -> { bridge.setHidden(d.id, button, p.getValue("hidden").toBool()); ok(deviceJson(bridge.store.get(d.id)!!)) }
-            m == Method.POST && button != null && p["favorite"] != null -> { bridge.setFavorite(d.id, button, p.getValue("favorite").toBool()); ok(deviceJson(bridge.store.get(d.id)!!)) }
-            m == Method.POST && button != null && p["onscreen"] != null -> { bridge.setOnScreen(d.id, button, p.getValue("onscreen").toBool()); ok(deviceJson(bridge.store.get(d.id)!!)) }
-            m == Method.POST && button != null && p["cell"] != null -> {
-                bridge.moveButton(d.id, button, p["cell"]?.toIntOrNull() ?: return error(Response.Status.BAD_REQUEST, "Bad 'cell'"))
+            m == Method.POST && button != null && (p["hidden"] != null || p["favorite"] != null || p["onscreen"] != null) -> {
+                val flags = listOf("hidden", "favorite", "onscreen").associateWith { k -> p[k] }.filterValues { it != null }
+                flags.entries.firstOrNull { it.value!!.strictBool() == null }?.let { (k, v) -> return error(Response.Status.BAD_REQUEST, "Invalid $k '$v'. Use true or false") }
+                val hidden = flags["hidden"]?.strictBool(); val fav = flags["favorite"]?.strictBool(); val on = flags["onscreen"]?.strictBool()
+                hidden?.let { bridge.setHidden(d.id, button, it) }
+                fav?.let { bridge.setFavorite(d.id, button, it) }
+                on?.let { bridge.setOnScreen(d.id, button, it) }
                 ok(deviceJson(bridge.store.get(d.id)!!))
             }
             m == Method.POST -> {
@@ -248,7 +281,7 @@ class BridgeHttpServer(
     private fun candidates(p: Map<String, String>): Response {
         val type = p["type"]?.let(::deviceType) ?: return error(Response.Status.BAD_REQUEST, "Missing 'type'")
         val brand = p["brand"]?.toIntOrNull() ?: return error(Response.Status.BAD_REQUEST, "Missing 'brand'")
-        val on = p["on"]?.toBool() ?: false
+        val on = p["on"]?.let { it.strictBool() ?: return error(Response.Status.BAD_REQUEST, "Invalid on '$it'") } ?: false
         return ok(JsonArray(bridge.pairing.candidates(type, brand).mapIndexed { i, c ->
             buildJsonObject { put("index", i); put("label", c.label); put("test_key", bridge.pairing.testKey(c, on)) }
         }))
@@ -259,7 +292,7 @@ class BridgeHttpServer(
         val brand = p["brand"]?.toIntOrNull() ?: return error(Response.Status.BAD_REQUEST, "Missing 'brand'")
         val index = p["index"]?.toIntOrNull() ?: 0
         val c = bridge.pairing.candidates(type, brand).getOrNull(index) ?: return error(Response.Status.NOT_FOUND, "No candidate #$index")
-        val on = p["on"]?.toBool() ?: false
+        val on = p["on"]?.let { it.strictBool() ?: return error(Response.Status.BAD_REQUEST, "Invalid on '$it'") } ?: false
         return result(bridge.pairing.test(c, on)) { put("test_key", bridge.pairing.testKey(c, on)) }
     }
 
@@ -268,7 +301,12 @@ class BridgeHttpServer(
     private fun finder(action: String, p: Map<String, String>): Response {
         val f = bridge.finder
         when (action) {
-            "start" -> f.start(p["key"]?.uppercase() ?: return error(Response.Status.BAD_REQUEST, "Missing 'key'"), p["interval"]?.toLongOrNull()?.coerceIn(300, 5000) ?: 900)
+            "start" -> {
+                val key = p["key"]?.uppercase() ?: return error(Response.Status.BAD_REQUEST, "Missing 'key'")
+                if (f.state.value.running && f.state.value.owner != source.get() && p["force"]?.strictBool() != true)
+                    return error(Response.Status.CONFLICT, "The finder is running on the ${f.state.value.owner}. Stop it there, or send force=true")
+                f.start(key, p["interval"]?.toLongOrNull()?.coerceIn(300, 5000) ?: 900, owner = source.get())
+            }
             "stop" -> f.stop()
             "resume" -> f.resume()
             "page" -> f.setPage(p["page"]?.toIntOrNull() ?: 0)
@@ -289,6 +327,7 @@ class BridgeHttpServer(
         val s = bridge.finder.state.value
         put("key", s.key)
         put("running", s.running)
+        put("owner", s.owner)
         put("sent", s.sent)
         put("total", s.total)
         put("page", s.page)
@@ -343,10 +382,17 @@ class BridgeHttpServer(
         )
     }
 
-    private fun runScene(idOrName: String?): Response {
+    /** Scenes run one at a time. wait=false answers 202 at once (for long scenes); otherwise the response has every step. */
+    private fun runScene(idOrName: String?, wait: String? = null): Response {
         idOrName ?: return error(Response.Status.BAD_REQUEST, "Missing 'name'")
         val sc = bridge.scenes.get(idOrName) ?: return error(Response.Status.NOT_FOUND, "Unknown scene '$idOrName'")
-        val results = bridge.runScene(sc, if (source.get() == "web") "web" else "scene")
+        val src = if (source.get() == "web") "web" else "scene"
+        val waitFor = wait?.let { it.strictBool() ?: return error(Response.Status.BAD_REQUEST, "Invalid wait '$it'") } ?: true
+        if (!waitFor) {
+            bridge.runSceneAsync(sc, src)
+            return ok(buildJsonObject { put("status", "queued"); put("scene", sc.id) }, Response.Status.ACCEPTED)
+        }
+        val results = bridge.runScene(sc, src)
         val failed = results.count { it.second != null && it.second !is SendResult.Ok }
         return ok(buildJsonObject {
             put("status", if (failed == 0) "ok" else "partial"); put("scene", sc.id); put("failed", failed)
@@ -367,7 +413,8 @@ class BridgeHttpServer(
         put("bind_address", c.bindAddress)
         put("auth", c.authMode.name.lowercase())
         put("username", c.username)
-        put("has_password", c.password.isNotEmpty())
+        put("has_password", c.hasPassword)
+        put("allow_get", c.allowGetActions)
         put("wake_lock", c.wakeLock)
         put("auto_start", c.autoStart)
     }
@@ -386,11 +433,12 @@ class BridgeHttpServer(
         } ?: cur.authMode
         val wake = p["wake_lock"]?.let { it.strictBool() ?: return bad("Invalid wake_lock '$it'") } ?: cur.wakeLock
         val auto = p["auto_start"]?.let { it.strictBool() ?: return bad("Invalid auto_start '$it'") } ?: cur.autoStart
+        val allowGet = p["allow_get"]?.let { it.strictBool() ?: return bad("Invalid allow_get '$it'") } ?: cur.allowGetActions
         val next = cur.copy(
             port = port, bindAddress = bind, authMode = auth,
             username = p["username"]?.trim() ?: cur.username,
-            password = p["password"]?.takeIf { it.isNotEmpty() } ?: cur.password,
-            wakeLock = wake, autoStart = auto,
+            password = p["password"]?.takeIf { it.isNotEmpty() } ?: "",
+            wakeLock = wake, autoStart = auto, allowGetActions = allowGet,
         )
         bridge.applySettings(next)?.let { return error(Response.Status.BAD_REQUEST, it) }
         return ok(settingsJson())
@@ -444,7 +492,7 @@ class BridgeHttpServer(
             putJsonArray("available") { l.available.forEach { add(it) } }
         }
         put("swipe", d.swipeDpad)
-        val g = bridge.grid(d)
+        val g = bridge.grid(d, l)
         putJsonObject("grid") {
             put("cols", g.cols); put("rows", g.rows)
             putJsonArray("tiles") { g.tiles.forEach { t -> addJsonObject { put("id", t.id); put("col", t.col); put("row", t.row); put("w", t.w); put("h", t.h) } } }
@@ -498,8 +546,6 @@ class BridgeHttpServer(
         else -> null
     }
 
-    private fun String.toBool() = equals("true", true) || this == "1" || equals("on", true) || equals("yes", true)
-
     private fun params(s: IHTTPSession): Map<String, String> {
         val out = linkedMapOf<String, String>()
         if (s.method == Method.POST || s.method == Method.PUT || s.method == Method.DELETE) {
@@ -531,16 +577,13 @@ class BridgeHttpServer(
         json.encodeToString(JsonElement.serializer(), buildJsonObject { put("status", "error"); put("error", message) }),
     )
 
-    private fun cors(r: Response) = r.apply {
-        addHeader("Access-Control-Allow-Origin", "*")
-        addHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        addHeader("Cache-Control", "no-store")
-    }
+    /** No Access-Control-Allow-Origin: only the bundled dashboard (same origin) and non-browser clients may call the API. */
+    private fun cors(r: Response) = r.apply { addHeader("Cache-Control", "no-store") }
+
+    private val webHtml: String? by lazy { javaClass.getResourceAsStream("/web/index.html")?.use { it.readBytes().toString(Charsets.UTF_8) } }
 
     private fun webUi(): Response {
-        val html = javaClass.getResourceAsStream("/web/index.html")?.use { it.readBytes().toString(Charsets.UTF_8) }
-            ?: return error(Response.Status.NOT_FOUND, "Web UI missing")
+        val html = webHtml ?: return error(Response.Status.NOT_FOUND, "Web UI missing")
         return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html)
     }
 }

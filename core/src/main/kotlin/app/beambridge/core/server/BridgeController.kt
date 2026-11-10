@@ -47,7 +47,7 @@ class BridgeController(
     private fun sendCode(code: IrCode, toggleKey: String? = null): SendResult = try {
         // RC5/RC6 toggle phase: computed here, but only committed once the frame actually went out.
         val toggle = toggleKey?.let { k -> !(toggles[k] ?: true) } ?: false
-        transmit(IrCodeEncoder.encode(code, toggle, datasets().protocols)).also { r ->
+        transmit(IrCodeEncoder.encode(code, toggle)).also { r ->
             if (r is SendResult.Ok && toggleKey != null) toggles[toggleKey] = toggle
         }
     } catch (e: IrEncodingException) {

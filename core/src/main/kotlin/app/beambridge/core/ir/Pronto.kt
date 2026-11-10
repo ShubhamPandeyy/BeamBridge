@@ -1,6 +1,6 @@
 package app.beambridge.core.ir
 
-/** Pronto hex ("0000 006D 0022 0002 0157 00AC ...") ⇄ raw pulses. Only learned (0000) codes are supported. */
+/** Pronto hex ("0000 006D 0022 0002 0157 00AC ...") → raw pulses (decode only). Only learned (0000) codes are supported. */
 object Pronto {
     private const val CLOCK = 0.241246 // µs per Pronto frequency unit
 
@@ -20,11 +20,4 @@ object Pronto {
         return IrSignal(frequency, pattern)
     }
 
-    fun encode(signal: IrSignal): String {
-        val freqUnit = (1_000_000.0 / (signal.frequency * CLOCK)).toInt()
-        val period = 1_000_000.0 / signal.frequency
-        val p = if (signal.pattern.size % 2 == 0) signal.pattern else signal.pattern + 10_000
-        val words = listOf(0, freqUnit, p.size / 2, 0) + p.map { (it / period).toInt().coerceAtLeast(1) }
-        return words.joinToString(" ") { "%04X".format(it) }
-    }
 }

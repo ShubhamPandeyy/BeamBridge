@@ -1,3 +1,7 @@
+// Bump baseVersion for a feature round; CI appends its run number so every build gets a unique, increasing version.
+val baseVersion = "1.6"
+val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -12,8 +16,8 @@ android {
         applicationId = "app.beambridge"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 500 + buildNumber
+        versionName = System.getenv("BEAMBRIDGE_VERSION") ?: "$baseVersion.$buildNumber"
     }
 
     buildTypes {

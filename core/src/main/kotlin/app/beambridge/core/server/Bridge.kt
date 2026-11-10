@@ -19,6 +19,8 @@ class Bridge(
     val endpoints: Endpoints,
     val hooks: BridgeHooks = object : BridgeHooks {},
     val scenes: SceneStore = InMemorySceneStore(),
+    /** False until the code datasets have loaded; the API answers 503 until then instead of half-working. */
+    val isReady: () -> Boolean = { true },
 ) {
     val store: DeviceStore get() = controller.store
     val history: CommandHistory get() = controller.history
@@ -41,11 +43,16 @@ class Bridge(
         return Result.success(scenes.save(Scene(existing?.id ?: scenes.newId(name), name.trim(), steps)))
     }
 
+    private val sceneLock = Any()
+    private val sceneRunner by lazy {
+        java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "scene-runner").apply { isDaemon = true } }
+    }
+
     /**
-     * Runs a scene step by step on the calling thread (one transmitter, so steps go out one after another with
-     * [gapMs] between presses). Stops at nothing: a failed step is reported and the rest still run.
+     * Runs a scene step by step on the calling thread, [gapMs] between presses. Scenes never overlap: a second one
+     * waits for the first, so their keys can't interleave. A failed step is reported and the rest still run.
      */
-    fun runScene(scene: Scene, source: String = "scene", gapMs: Long = 350): List<Pair<SceneStep, SendResult?>> =
+    fun runScene(scene: Scene, source: String = "scene", gapMs: Long = 350): List<Pair<SceneStep, SendResult?>> = synchronized(sceneLock) {
         scene.steps.mapIndexed { i, st ->
             if (st.isWait) { Thread.sleep(st.delayMs); st to null }
             else {
@@ -53,11 +60,31 @@ class Bridge(
                 st to controller.blast(st.device, st.button, source)
             }
         }
+    }
+
+    /** Queues a scene and returns at once (API wait=false). */
+    fun runSceneAsync(scene: Scene, source: String = "scene") { sceneRunner.execute { runCatching { runScene(scene, source) } } }
+
+    /** Deletes a device and drops its steps from every scene (a scene left empty is removed). @return scenes changed. */
+    fun deleteDevice(id: String): Int {
+        val d = store.get(id) ?: return 0
+        store.remove(d.id)
+        var changed = 0
+        for (sc in scenes.scenes.value) {
+            if (sc.steps.none { !it.isWait && it.device.equals(d.id, true) }) continue
+            val left = sc.steps.filterNot { !it.isWait && it.device.equals(d.id, true) }
+            if (left.none { !it.isWait }) scenes.remove(sc.id) else scenes.save(sc.copy(steps = left))
+            changed++
+        }
+        return changed
+    }
 
     /** Validates and stores settings; restarts the socket if address or port changed. Returns an error message or null. */
-    fun applySettings(next: BridgeSettings): String? {
-        next.validate()?.let { return it }
+    fun applySettings(input: BridgeSettings): String? {
         val old = settings.settings.value
+        // A blank password field means "keep the current one".
+        val next = if (input.password.isEmpty()) input.copy(passwordHash = old.passwordHash) else input
+        next.validate()?.let { return it }
         if (next.port != old.port || next.bindAddress != old.bindAddress) {
             val host = Net.resolve(next.bindAddress)
             if (host == "") return "${next.bindAddress} is not on this phone right now"
@@ -86,19 +113,20 @@ class Bridge(
     /** Remote layout for a device's visible buttons (AC actions live in the AC panel, not the grid). */
     fun layout(d: SavedDevice): RemoteLayout {
         val exclude = if (d.type == DeviceType.AC) AcCodec.actions(controller.acRemote(d)).toSet() else emptySet()
-        return RemoteLayout.of(controller.visibleButtons(d), d.grid, exclude, d.onScreen, d.buttons.filter { it.custom }.map { it.name })
+        return RemoteLayout.of(controller.visibleButtons(d), exclude, d.onScreen, d.buttons.filter { it.custom }.map { it.name })
     }
 
     /** Adds a supported key to (or removes it from) the main remote screen. */
     fun setOnScreen(id: String, button: String, on: Boolean) = store.update(id) { d ->
         val rest = d.onScreen.filterNot { it.equals(button, true) }
         val hidden = if (on) d.hidden.filterNot { it.equals(button, true) } else d.hidden
-        d.copy(onScreen = if (on) rest + button else rest, hidden = hidden, grid = if (on) d.grid else d.grid.map { if (it.equals(button, true)) "" else it })
+        d.copy(onScreen = if (on) rest + button else rest, hidden = hidden)
     }
 
     // ---- free-form grid ----
 
-    fun grid(d: SavedDevice): RemoteGrid = RemoteGrid.resolve(layout(d), d.tiles, d.gridCols.coerceIn(RemoteGrid.COLS), d.gridRows.coerceIn(RemoteGrid.ROWS))
+    fun grid(d: SavedDevice, layout: RemoteLayout = layout(d)): RemoteGrid =
+        RemoteGrid.resolve(layout, d.tiles, d.gridCols.coerceIn(RemoteGrid.COLS), d.gridRows.coerceIn(RemoteGrid.ROWS))
 
     /** Moves/resizes one tile; on success the whole resolved arrangement is saved. Returns an error message or null. */
     fun moveTile(id: String, tile: String, col: Int, row: Int, w: Int, h: Int): String? {
@@ -125,14 +153,4 @@ class Bridge(
     }
 
     fun setSwipe(id: String, swipe: Boolean) = store.update(id) { it.copy(swipeDpad = swipe) }
-
-    /** Puts [button] into extras-grid cell [cell], swapping with whatever was there. */
-    fun moveButton(id: String, button: String, cell: Int) = store.update(id) { d ->
-        val cells = layout(d).extras.toMutableList()
-        val from = cells.indexOf(button)
-        if (from < 0 || cell < 0) return@update d
-        while (cells.size <= cell) cells.add("")
-        cells[from] = cells[cell]; cells[cell] = button
-        d.copy(grid = cells.dropLastWhile { it.isEmpty() })
-    }
 }

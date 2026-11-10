@@ -13,18 +13,17 @@ class RealDataTest {
         assertEquals(emptyList(), datasets.problems)
         assertEquals(71, datasets.tv.manufacturers.size)
         assertEquals(149, datasets.tv.remoteCount) // 148 + TCL RCA remote
-        assertEquals(156, datasets.protocols.protocols.size)
         assertEquals(208, datasets.ac.remoteCount)
-        println("protocol programs decoded: ${datasets.protocols.supportedCount}/156")
-        assertTrue(datasets.protocols.supportedCount >= 150)
+        assertEquals(128, datasets.stb.allRemotes.size)
+        assertTrue(datasets.stb.providers("tata").isNotEmpty())
     }
 
     @Test fun everySupportedTvButtonEncodes() {
         var ok = 0; var skipped = 0
         for (m in datasets.tv.manufacturers) for (r in m.remotes) {
-            if (!r.isSupported(datasets.protocols)) { skipped++; continue }
+            if (!r.supported) { skipped++; continue }
             for (name in r.buttons.keys) {
-                val sig = IrCodeEncoder.encode(r.irCode(name)!!, toggleState = true, programs = datasets.protocols)
+                val sig = IrCodeEncoder.encode(r.irCode(name)!!, toggleState = true)
                 assertTrue(sig.pattern.size > 4, "${m.name}/${r.remoteId}/$name")
                 assertTrue(sig.pattern.all { it > 0 })
                 assertTrue(sig.frequency in 30_000..60_000, "freq ${sig.frequency} ${m.name}/${r.remoteId}")
@@ -32,7 +31,7 @@ class RealDataTest {
             }
         }
         println("TV buttons encoded: $ok, remotes skipped (no protocol): $skipped")
-        assertTrue(ok > 2500)
+        assertTrue(ok > 2300)
     }
 
     @Test fun samsungPowerMatchesNec() {
@@ -45,7 +44,8 @@ class RealDataTest {
 
     @Test fun lgProtocolProgramRendersLikeNec() {
         // "LG Protocol 1": 28-bit frame, 16/8 unit header, 1/1 and 1/3 bits, 1-unit stop mark.
-        val sig = datasets.protocols.program(5)!!.render(Bits.fromHex("0x88c0051", 28))
+        val lg = datasets.ac.manufacturers.flatMap { it.remotes }.first { it.name.startsWith("LG AC 1") }
+        val sig = lg.program!!.render(Bits.fromHex("0x88c0051", 28))
         assertEquals(1 + 1 + 28 * 2 + 1, sig.pattern.size) // header mark+space, 28 bit pairs, stop mark
         assertTrue(sig.pattern[0] in 7_500..8_500, "header mark ${sig.pattern[0]}")
         assertTrue(sig.pattern[1] in 3_500..4_500)
@@ -76,6 +76,26 @@ class RealDataTest {
     @Test fun lgAcPowerOffIsKnownFrame() {
         val lg = datasets.ac.manufacturers.flatMap { it.remotes }.first { it.name.startsWith("LG AC 1") }
         assertEquals(java.math.BigInteger("88c0051", 16), AcCodec.frame(lg, AcState(power = false)))
+    }
+
+    /** TV "PROTOCOL_12/13" are RCA, not the AC programs that share their numbers. */
+    @Test fun tclDatasetPowerIsRca() {
+        val tcl = datasets.tv.manufacturers.first { it.name == "TCL" }
+        val r = tcl.remotes.first { it.protocolName == "PROTOCOL_13" }
+        val sig = IrCodeEncoder.encode(r.irCode("POWER")!!)
+        assertEquals(listOf(4000, 4000, 500), sig.pattern.take(3))
+        // Every PROTOCOL_12/13 code is RCA-shaped: the low 12 bits are the complement of the high 12 bits.
+        for (rr in datasets.tv.manufacturers.flatMap { it.remotes }.filter { it.protocolId == 12 || it.protocolId == 13 })
+            for ((k, hex) in rr.buttons) {
+                val v = hex.removePrefix("0x").toLong(16)
+                assertEquals((v shr 12) xor 0xFFF, v and 0xFFF, "${rr.remoteId}/$k $hex")
+            }
+    }
+
+    @Test fun unknownTvProtocolsAreUnsupportedNotGuessed() {
+        val r = datasets.tv.manufacturers.flatMap { it.remotes }.first { it.protocolName == "PROTOCOL_16" }
+        assertFalse(r.supported)
+        assertFailsWith<IrEncodingException> { IrCodeEncoder.encode(r.irCode(r.buttons.keys.first())!!) }
     }
 
     @Test fun rc5ToggleFlipsMask() {

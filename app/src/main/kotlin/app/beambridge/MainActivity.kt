@@ -7,10 +7,8 @@ import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -42,6 +40,9 @@ class MainActivity : ComponentActivity() {
             val prefs by vm.settings.collectAsStateWithLifecycle()
             val route by vm.route.collectAsStateWithLifecycle()
             // Over the lock screen only while a remote is open and the user turned it on.
+            LaunchedEffect(prefs.lockScreenMigrated) {
+                if (!prefs.lockScreenMigrated) vm.updatePrefs { it.copy(lockScreen = true, lockScreenMigrated = true) }
+            }
             val showOverLock = prefs.lockScreen && route is Route.Device
             LaunchedEffect(showOverLock) { setOverLockScreen(showOverLock) }
             BeamBridgeTheme(prefs.theme, prefs.darkMode) { App(vm) }
@@ -52,11 +53,21 @@ class MainActivity : ComponentActivity() {
     private fun setOverLockScreen(on: Boolean) {
         if (Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(on)
+            // Wake the screen too if a remote is on top when the phone is picked up.
+            setTurnScreenOn(on)
         } else if (on) {
             window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
         }
+    }
+
+    override fun onStart() { super.onStart(); AppVisibility.foreground = true }
+
+    override fun onStop() {
+        AppVisibility.foreground = false
+        (application as BeamBridgeApp).graph.history.flush()
+        super.onStop()
     }
 
     /** Phone volume keys drive the open remote (see [MainViewModel.onVolumeKey]). */
@@ -85,10 +96,8 @@ private fun App(vm: MainViewModel) {
     var settingsOpen by remember { mutableStateOf(false) }
 
     val prefs by vm.settings.collectAsStateWithLifecycle()
-    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     LaunchedEffect(Unit) {
         // First run asks inside onboarding instead.
-        if (Build.VERSION.SDK_INT >= 33 && vm.settings.value.onboarded) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         if (vm.settings.value.autoStart && !BridgeRuntime.status.value.running) vm.setServerRunning(true)
     }
     // One host for the whole app; a new message replaces the current one instead of queueing behind it.

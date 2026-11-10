@@ -44,16 +44,12 @@ class JsonFileDeviceStore(private val file: File) : DeviceStore {
     private val state = MutableStateFlow(load())
     override val devices: StateFlow<List<SavedDevice>> = state.asStateFlow()
 
-    private fun load(): List<SavedDevice> = runCatching {
-        if (file.exists()) json.decodeFromString(StoreFile.serializer(), file.readText()).devices else emptyList()
-    }.getOrElse { emptyList() }
+    private fun load(): List<SavedDevice> =
+        SafeFile.read(file, emptyList()) { json.decodeFromString(StoreFile.serializer(), it).devices }
 
     @Synchronized
     private fun commit(list: List<SavedDevice>) {
-        file.parentFile?.mkdirs()
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(json.encodeToString(StoreFile.serializer(), StoreFile(devices = list)))
-        if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
+        SafeFile.write(file, json.encodeToString(StoreFile.serializer(), StoreFile(devices = list)))
         state.value = list
     }
 

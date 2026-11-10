@@ -10,7 +10,7 @@ class LayoutTest {
         "CH_UP", "CH_DOWN", "HOME", "BACK", "MENU", "INPUT", "NETFLIX", "1")
 
     @Test fun defaultScreenHasOnlyFixedSlots() {
-        val l = RemoteLayout.of(keys, emptyList())
+        val l = RemoteLayout.of(keys)
         assertEquals("MENU", l.settings)
         assertNull(l.chUp)
         assertEquals(emptyList(), l.extras)
@@ -18,7 +18,7 @@ class LayoutTest {
     }
 
     @Test fun addedAndCustomKeysAppear() {
-        val l = RemoteLayout.of(keys + "MY_KEY", emptyList(), onScreen = listOf("CH_UP", "CH_DOWN", "netflix"), custom = listOf("MY_KEY"))
+        val l = RemoteLayout.of(keys + "MY_KEY", onScreen = listOf("CH_UP", "CH_DOWN", "netflix"), custom = listOf("MY_KEY"))
         assertEquals("CH_UP", l.chUp)
         assertEquals(listOf("NETFLIX", "MY_KEY"), l.extras)
         assertEquals(listOf("INPUT", "1"), l.available)

@@ -82,9 +82,6 @@ input:focus,select:focus,textarea:focus{border-color:var(--pri)} label{font-size
 .swipe span{position:absolute;opacity:.35;font-size:20px} .swipe span.on{opacity:1;color:var(--pri)}
 .trio{display:flex;justify-content:space-between}
 .rock .lbl{align-self:center;font-size:12px;font-weight:700;color:var(--mut);padding:0 4px}
-.extras{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;justify-items:center}
-.extras .cell{width:64px;height:64px;border-radius:50%;border:2px dashed transparent}
-.extras .cell.drop{border-color:var(--pri)}
 .ac{display:flex;flex-direction:column;gap:16px;align-items:center}
 .ac .temp{font-size:64px;font-weight:700;letter-spacing:-2px}
 /* menu & sheet */
@@ -382,7 +379,7 @@ async function viewFinder(v,deviceId){
     keys.forEach(k=>{const b=h(`<button class="chip ${k===key?"on":""}">${KEY[k]||""} ${pretty(k)}</button>`);b.onclick=()=>{key=k;kc.querySelectorAll(".chip").forEach(x=>x.classList.remove("on"));b.classList.add("on")};$(".row",kc).append(b)});
     const go=h(`<button class="btn">Start finding</button>`);go.onclick=async()=>{let dev=$("#dev",card).value;
       if(dev==="__new"){const n=prompt("Name for the new device","My TV");if(!n)return;dev=(await post("/api/devices",{type:"tv",name:n})).id}
-      sessionStorage.finderDevice=dev;await post("/api/finder/start",{key});render()};
+      sessionStorage.finderDevice=dev;try{await post("/api/finder/start",{key})}catch(e){if(!confirm(e.message+"\n\nTake it over from here?"))return;await post("/api/finder/start",{key,force:true})}render()};
     card.append(kc,go,h(`<p class="t2" style="margin:0">Point the phone at the TV. Every stored code for this button is sent, one by one. Tap Stop as soon as the TV reacts.</p>`));c.append(card);return}
   if(f.running){const card=h(`<div class="card col" style="align-items:center;text-align:center"><div class="t1">Sending ${esc(pretty(f.key))}…</div><div style="font-size:48px;font-weight:700">${f.sent} / ${f.total}</div>
      <div style="width:100%;height:10px;border-radius:5px;background:var(--s2);overflow:hidden"><div style="height:100%;width:${(100*f.sent/f.total).toFixed(1)}%;background:var(--pri);transition:width .3s"></div></div>
@@ -439,10 +436,12 @@ async function viewSettings(v){
    <div class="t1" style="margin-top:8px">Power</div>
    <label class="row"><input type="checkbox" id="wl" style="width:auto" ${s.wake_lock?"checked":""}> Keep CPU awake while serving</label>
    <label class="row"><input type="checkbox" id="as" style="width:auto" ${s.auto_start?"checked":""}> Start server when the app opens</label>
+   <div class="t1" style="margin-top:8px">Automations</div>
+   <label class="row"><input type="checkbox" id="ag" style="width:auto" ${s.allow_get?"checked":""}> Allow actions from simple GET links (other websites are always blocked)</label>
    <button class="btn" id="save">Save</button></div>`);
   let auth=s.auth;c.querySelectorAll("[data-auth]").forEach(b=>b.onclick=()=>{auth=b.dataset.auth;c.querySelectorAll("[data-auth]").forEach(x=>x.classList.toggle("on",x===b));$("#cred",c).hidden=auth!=="password"});
   $("#chk",c).onclick=async()=>{try{const r=await api(`/api/network/check?address=${enc($("#a",c).value)}&port=${$("#port",c).value}`);$("#res",c).textContent=!r.present?"Address not on this phone":r.available?`✓ Free · ${r.url}`:"✗ Port in use"}catch(e){$("#res",c).textContent=e.message}};
-  $("#save",c).onclick=async()=>{try{const body={auth,username:$("#u",c).value,bind_address:$("#a",c).value,port:+$("#port",c).value,wake_lock:$("#wl",c).checked,auto_start:$("#as",c).checked};
+  $("#save",c).onclick=async()=>{try{const body={auth,username:$("#u",c).value,bind_address:$("#a",c).value,port:+$("#port",c).value,wake_lock:$("#wl",c).checked,auto_start:$("#as",c).checked,allow_get:$("#ag",c).checked};
     if($("#p",c).value)body.password=$("#p",c).value;await post("/api/settings",body);toast("Saved");
     if(+body.port!==s.port||body.bind_address!==s.bind_address)toast("Server moved, open the new address")}catch(e){toast(e.message)}};v.append(c)}
 

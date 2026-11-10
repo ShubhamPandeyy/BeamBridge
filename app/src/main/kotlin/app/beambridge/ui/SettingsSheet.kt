@@ -49,7 +49,8 @@ fun SettingsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
 
             Text("Remote", style = MaterialTheme.typography.titleSmall)
             SwitchRow("Phone volume keys control the remote", "Press both together to toggle power", current.volumeKeys) { on -> vm.updatePrefs { it.copy(volumeKeys = on) } }
-            SwitchRow("Notify when a command is sent", "Silent \"Power on beamed to …\" confirmation", current.notifyOnSend) { on -> vm.updatePrefs { it.copy(notifyOnSend = on) } }
+            SwitchRow("Notify when a command is sent", "Silent \"Power on beamed to …\" confirmation for sends from the web, API or scenes", current.notifyOnSend) { on -> vm.updatePrefs { it.copy(notifyOnSend = on) } }
+            NotificationPermissionRow()
             SwitchRow("Show remote on lock screen", "While a remote is open, it stays usable without unlocking", current.lockScreen) { on -> vm.updatePrefs { it.copy(lockScreen = on) } }
             HorizontalDivider()
 
@@ -62,7 +63,8 @@ fun SettingsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
             if (draft.authMode == AuthMode.PASSWORD) {
                 OutlinedTextField(draft.username, { draft = draft.copy(username = it.trim()) }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
-                    draft.password, { draft = draft.copy(password = it) }, label = { Text("Password") }, singleLine = true,
+                    draft.password, { draft = draft.copy(password = it) },
+                    label = { Text(if (current.hasPassword) "New password (blank keeps the current one)" else "Password") }, singleLine = true,
                     visualTransformation = if (showPw) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     trailingIcon = { IconButton(onClick = { showPw = !showPw }) { Icon(if (showPw) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, "Show password") } },
@@ -94,6 +96,12 @@ fun SettingsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
             }
             check?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 
+            SwitchRow(
+                "Allow actions from simple GET links",
+                "For automations that can only open a URL. Other websites can never use them either way.",
+                draft.allowGetActions,
+            ) { draft = draft.copy(allowGetActions = it) }
+
             Text("Background", style = MaterialTheme.typography.titleSmall)
             SwitchRow("Keep CPU and Wi-Fi awake", "Reliable responses while the screen is off", draft.wakeLock) { draft = draft.copy(wakeLock = it) }
             SwitchRow("Start server when the app opens", null, draft.autoStart) { draft = draft.copy(autoStart = it) }
@@ -101,13 +109,43 @@ fun SettingsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Button(
                 onClick = {
-                    error = vm.saveSettings(draft.copy(port = port, theme = current.theme, darkMode = current.darkMode, volumeKeys = current.volumeKeys, lockScreen = current.lockScreen, notifyOnSend = current.notifyOnSend, onboarded = true))
+                    // Only the web/server fields come from the draft; app preferences keep their live values.
+                    error = vm.saveSettings(current.copy(
+                        port = port, bindAddress = draft.bindAddress, authMode = draft.authMode, username = draft.username,
+                        password = draft.password, wakeLock = draft.wakeLock, autoStart = draft.autoStart, allowGetActions = draft.allowGetActions,
+                    ))
                     if (error == null) onDismiss()
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) { Text("Save") }
         }
     }
+}
+
+/** Shows whether Android lets us post notifications, with a shortcut to fix it (also for people who skipped onboarding). */
+@Composable
+private fun NotificationPermissionRow() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var enabled by remember { mutableStateOf(true) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        enabled = androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()
+        onPauseOrDispose {}
+    }
+    if (enabled) return
+    ListItem(
+        headlineContent = { Text("Notifications are blocked") },
+        supportingContent = { Text("The server's status and send confirmations can't be shown") },
+        trailingContent = {
+            FilledTonalButton(onClick = {
+                ctx.startActivity(
+                    android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }) { Text("Allow") }
+        },
+        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+    )
 }
 
 @Composable

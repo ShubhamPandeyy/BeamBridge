@@ -3,12 +3,15 @@ name: Build APK
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -22,11 +25,25 @@ jobs:
       - name: Make Gradle wrapper executable (Windows commits drop the flag)
         run: chmod +x gradlew
 
+      - name: Read version from app/build.gradle.kts
+        id: ver
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then V="${GITHUB_REF_NAME#v}"
+          else V="$(grep -oP 'val baseVersion = "\K[^"]+' app/build.gradle.kts).${GITHUB_RUN_NUMBER}"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "BEAMBRIDGE_VERSION=$V" >> "$GITHUB_ENV"
+
       - name: Core unit tests (IR encoders, dataset parsers, HTTP server)
         run: ./gradlew :core:test --stacktrace
 
       - name: Build APKs
         run: ./gradlew :app:assembleDebug :app:assembleRelease --stacktrace
+
+      - name: Name the APKs
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/*.apk "dist/BeamBridge-${{ steps.ver.outputs.version }}.apk"
+          cp app/build/outputs/apk/debug/*.apk "dist/BeamBridge-${{ steps.ver.outputs.version }}-debug.apk"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -37,3 +54,55 @@ jobs:
         with:
           name: BeamBridge-release-apk
           path: app/build/outputs/apk/release/*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/*.apk
+
+  # Releases:
+  #  - push to main     -> refreshes ONE pre-release called "nightly" (no pile of releases for every commit)
+  #  - "Run workflow"   -> a real release v<baseVersion>.<run number> (one click in the Actions tab)
+  #  - push a v* tag    -> a real release named after the tag
+  # Notes: the CHANGELOG.md section for the current baseVersion, then the commits since the last release.
+  release:
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          BASE="${VERSION%.*}"
+          awk -v v="$BASE" '/^## /{p = ($2 == v || $2 == v".0")} p' CHANGELOG.md | tail -n +2 > notes.md
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"; TITLE="BeamBridge ${TAG#v}"; FLAGS="--latest"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="v${VERSION}"; TITLE="BeamBridge ${VERSION}"; FLAGS="--latest"
+          else
+            TAG="nightly"; TITLE="BeamBridge nightly (${VERSION})"; FLAGS="--prerelease"
+            # Move the nightly tag to this commit: delete the old pre-release and its tag first.
+            gh release delete nightly --yes --cleanup-tag >/dev/null 2>&1 || true
+          fi
+          if [ "$TAG" != "nightly" ]; then
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body >> notes.md || true
+          fi
+          [ -s notes.md ] || echo "Automated build ${VERSION}." > notes.md
+          printf '\n---\nBuilt from %s. Install `BeamBridge-%s.apk` (signed with the debug key so it installs without setup).\n' "$GITHUB_SHA" "$VERSION" >> notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.apk --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" dist/*.apk --target "$GITHUB_SHA" --title "$TITLE" --notes-file notes.md $FLAGS
+          fi

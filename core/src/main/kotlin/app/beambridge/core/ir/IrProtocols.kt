@@ -96,7 +96,18 @@ sealed class IrProtocol(val key: String, val defaultFrequency: Int, val defaultB
     companion object {
         val all: List<IrProtocol> by lazy { listOf(Nec, Samsung, Sony, Rc5, Rc6, Jvc, Panasonic, Sharp, Rca) }
 
-        /** Built-in encoder for a dataset protocol (by name, falling back to the numeric ids 0-8). Null → needs a program. */
+        /**
+         * TV / set-top protocol numbers used by tv_remotes.json and the STB data. This is NOT the numbering of the AC
+         * protocol programs (ir_protocols / remote_protocols): rendering TV codes with those sent the wrong waveform.
+         * Evidence for 12/13: their codes are RCA-shaped (4-bit address, 8-bit command, 12-bit complement), and the
+         * set-top data holds 0xF2A0D5 under both, the TCL RCA power code confirmed on hardware. 5/10 hold 12-13 bit
+         * Philips codes (e.g. 0x74A), i.e. RC5. Numbers not listed here have no known definition and are unsupported.
+         */
+        val TV_PROTOCOL_IDS: Map<Int, IrProtocol> by lazy {
+            mapOf(0 to Nec, 1 to Rc5, 2 to Rc6, 5 to Rc5, 6 to Samsung, 7 to Sony, 8 to Panasonic, 10 to Rc5, 12 to Rca, 13 to Rca)
+        }
+
+        /** Built-in encoder for a dataset protocol, by name, or for "PROTOCOL_n" by [TV_PROTOCOL_IDS]. Null = unsupported. */
         fun resolve(name: String?, id: Int? = null): IrProtocol? {
             val n = name.orEmpty().uppercase()
             return when {
@@ -109,10 +120,7 @@ sealed class IrProtocol(val key: String, val defaultFrequency: Int, val defaultB
                 "SHARP" in n -> Sharp
                 n == "RCA" || n.startsWith("RCA_") -> Rca
                 n == "NEC" || n.startsWith("NEC") -> Nec
-                n.startsWith("PROTOCOL_") || n.isEmpty() -> when (id) {
-                    0 -> Nec; 1 -> Rc5; 2 -> Rc6; 6 -> Samsung; 7 -> Sony; 8 -> Panasonic
-                    else -> null
-                }
+                n.startsWith("PROTOCOL_") || n.isEmpty() -> (id ?: n.removePrefix("PROTOCOL_").toIntOrNull())?.let { TV_PROTOCOL_IDS[it] }
                 else -> null
             }
         }

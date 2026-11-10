@@ -144,7 +144,22 @@ private fun EmptyState() {
 private fun ServerCard(vm: MainViewModel, server: ServerStatus, devices: List<SavedDevice>) {
     val cs = MaterialTheme.colorScheme
     var showError by rememberSaveable { mutableStateOf(false) }
-    val network = remember(server) { vm.networkName() }
+    var locationGranted by remember { mutableStateOf(vm.hasLocationPermission()) }
+    val askLocation = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { locationGranted = it }
+    // Follows network changes live (switching Wi-Fi doesn't always restart the server).
+    var networkTick by remember { mutableIntStateOf(0) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    DisposableEffect(Unit) {
+        val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java)
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) { networkTick++ }
+            override fun onLost(network: android.net.Network) { networkTick++ }
+            override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) { networkTick++ }
+        }
+        runCatching { cm.registerDefaultNetworkCallback(cb) }
+        onDispose { runCatching { cm.unregisterNetworkCallback(cb) } }
+    }
+    val network = remember(server, locationGranted, networkTick) { vm.networkName() }
     val settings by vm.settings.collectAsStateWithLifecycle()
     val active = devices.count { !it.archived }
     val container by androidx.compose.animation.animateColorAsState(if (server.running && server.error == null) cs.primaryContainer else if (server.error != null) cs.errorContainer else cs.surfaceContainerHighest, label = "card")
@@ -172,6 +187,9 @@ private fun ServerCard(vm: MainViewModel, server: ServerStatus, devices: List<Sa
                         IconButton(onClick = { vm.copyText("Bridge URL", url) }) { Icon(Icons.Rounded.ContentCopy, "Copy address", tint = cs.onSurface) }
                     }
                 }
+            }
+            if (!locationGranted && server.running) TextButton(onClick = { askLocation.launch(android.Manifest.permission.ACCESS_FINE_LOCATION) }, contentPadding = PaddingValues(0.dp)) {
+                Icon(Icons.Rounded.Wifi, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Show my Wi-Fi name (needs location permission)")
             }
             FlowRowCompat {
                 StatusPill("$active device${if (active == 1) "" else "s"}", good = true)

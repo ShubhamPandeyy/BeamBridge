@@ -112,6 +112,7 @@ data class RemoteGrid(val cols: Int, val rows: Int, val tiles: List<Tile>) {
             if (w < mw || h < mh) return Result.failure(IllegalArgumentException("${t.id} must be at least ${mw}×$mh"))
             if (w > xw || h > xh) return Result.failure(IllegalArgumentException("${t.id} can be at most ${xw}×$xh"))
             if (col < 0 || row < 0 || col + w > grid.cols) return Result.failure(IllegalArgumentException("Outside the ${grid.cols}-column grid"))
+            if (row + h > maxOf(ROWS.last, grid.rows)) return Result.failure(IllegalArgumentException("Below the last row (${maxOf(ROWS.last, grid.rows)})"))
             val next = Tile(t.id, col, row, w, h)
             val others = grid.tiles.filter { it !== t }
             others.firstOrNull { it.overlaps(next) }?.let { return Result.failure(IllegalArgumentException("Spot taken by ${it.id}")) }

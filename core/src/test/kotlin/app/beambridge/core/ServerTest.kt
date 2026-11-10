@@ -39,8 +39,8 @@ class ServerTest {
     private val controller = BridgeController(store, emitter) { realDatasets }
     private val bridge = Bridge(
         controller,
-        PairingService({ realDatasets }, { null }, controller),
-        Finder(controller, { realDatasets }, { null }, scope),
+        PairingService({ realDatasets }, controller),
+        Finder(controller, { realDatasets }, scope),
         settings,
         Endpoints { "http://192.168.1.50:8080" },
     )
@@ -49,9 +49,10 @@ class ServerTest {
     @BeforeTest fun up() = server.startServer()
     @AfterTest fun down() { server.stop(); scope.cancel() }
 
-    private fun call(method: String, path: String, body: String? = null, type: String = "application/x-www-form-urlencoded", auth: String? = null): Pair<Int, String> {
+    private fun call(method: String, path: String, body: String? = null, type: String = "application/x-www-form-urlencoded", auth: String? = null, headers: Map<String, String> = emptyMap()): Pair<Int, String> {
         val c = URL("http://127.0.0.1:$port$path").openConnection() as HttpURLConnection
         c.requestMethod = method
+        headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
         auth?.let { c.setRequestProperty("Authorization", "Basic " + Base64.getEncoder().encodeToString(it.toByteArray())) }
         if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", type); c.outputStream.use { it.write(body.toByteArray()) } }
         val code = c.responseCode
@@ -101,12 +102,60 @@ class ServerTest {
         call("POST", "/api/devices/projector/buttons", "name=a&ir=0x1")
         call("POST", "/api/devices/projector/buttons", "name=b&ir=0x2")
         call("POST", "/api/devices/projector/buttons/INPUT", "hidden=false")
-        val moved = call("POST", "/api/devices/projector/buttons/B", "cell=6").second
-        assertTrue("\"extras\":[\"INPUT\",\"A\",\"\",\"\",\"\",\"\",\"B\"]" in moved, moved)
+        assertEquals(400, call("POST", "/api/devices/projector/buttons/B", "favorite=maybe").first)
+        assertTrue("\"extras\":[\"INPUT\",\"A\",\"B\"]" in call("GET", "/api/devices/projector").second)
         assertTrue("\"archived\":true" in call("POST", "/api/devices/projector", "archived=true").second)
         assertEquals(200, call("DELETE", "/api/devices/projector/buttons/INPUT").first)
         assertEquals(200, call("DELETE", "/api/devices/projector").first)
         assertNull(store.get("projector"))
+    }
+
+    /** Raw socket request, because HttpURLConnection refuses to send browser-only headers like Origin. */
+    private fun rawStatus(method: String, path: String, headers: List<String>, body: String = ""): Int =
+        java.net.Socket("127.0.0.1", port).use { sock ->
+            val req = buildString {
+                append("$method $path HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nConnection: close\r\n")
+                headers.forEach { append(it).append("\r\n") }
+                if (body.isNotEmpty()) append("Content-Type: application/x-www-form-urlencoded\r\nContent-Length: ${body.length}\r\n")
+                append("\r\n").append(body)
+            }
+            sock.getOutputStream().write(req.toByteArray())
+            sock.getInputStream().bufferedReader().readLine().split(' ')[1].toInt()
+        }
+
+    @Test fun crossSiteBrowserRequestsAreBlocked() {
+        val xs = listOf("Sec-Fetch-Site: cross-site")
+        assertEquals(403, rawStatus("GET", "/api/blast?device=tv_living_room&button=POWER", xs))
+        assertEquals(403, rawStatus("POST", "/api/settings", listOf("Origin: http://evil.example"), "auth=password&password=hijack"))
+        assertEquals(200, rawStatus("GET", "/api/devices", xs), "reading is harmless and stays allowed")
+        assertEquals(200, rawStatus("GET", "/api/blast?device=tv_living_room&button=POWER", listOf("Sec-Fetch-Site: same-origin", "Origin: http://127.0.0.1:$port")))
+        assertEquals(1, emitter.sent.size)
+        assertEquals(AuthMode.GUEST, settings.settings.value.authMode)
+    }
+
+    @Test fun getActionsCanBeTurnedOff() {
+        assertEquals(200, call("POST", "/api/settings", "allow_get=false").first)
+        assertEquals(405, call("GET", "/api/blast?device=tv_living_room&button=POWER").first)
+        assertEquals(200, call("POST", "/api/blast?device=tv_living_room&button=POWER").first)
+    }
+
+    @Test fun passwordIsStoredHashed() {
+        assertEquals(200, call("POST", "/api/settings", "auth=password&username=me&password=secret1").first)
+        val s = settings.settings.value
+        assertEquals("", s.password)
+        assertTrue(s.passwordHash.startsWith("pbkdf2:"))
+        assertEquals(401, call("GET", "/api/devices").first)
+        assertEquals(200, call("GET", "/api/devices", auth = "me:secret1").first)
+        assertEquals(401, call("GET", "/api/devices", auth = "me:wrong").first)
+        // Changing another setting without re-typing the password keeps it.
+        assertEquals(200, call("POST", "/api/settings", "wake_lock=false", auth = "me:secret1").first)
+        assertEquals(200, call("GET", "/api/devices", auth = "me:secret1").first)
+    }
+
+    @Test fun deletingADeviceCleansScenes() {
+        bridge.saveScene(null, "night", listOf(SceneStep("tv_living_room", "POWER"), SceneStep(delayMs = 100)))
+        assertTrue("\"scenes_updated\":1" in call("DELETE", "/api/devices/tv_living_room").second)
+        assertTrue(bridge.scenes.scenes.value.isEmpty())
     }
 
     @Test fun pairingThroughApi() {

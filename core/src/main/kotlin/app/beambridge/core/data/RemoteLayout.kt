@@ -7,7 +7,7 @@ package app.beambridge.core.data
  *          ( D-pad + OK )
  *   [ −      volume      + ]
  *   [back]  [settings]  [home]
- *   added keys: channel pill + extras grid (4 columns, user-arrangeable, "" = empty cell)
+ *   added keys: channel pill + [extras] (keys the user added; placed on the free-form [RemoteGrid])
  *
  * The default screen only has the fixed slots. Other keys the device supports are listed in [available] and appear
  * once the user adds them ([SavedDevice.onScreen]); custom keys the user created are always shown.
@@ -23,10 +23,8 @@ data class RemoteLayout(
     val hasDpad get() = listOfNotNull(up, down, left, right, ok).isNotEmpty()
 
     companion object {
-        const val COLUMNS = 4
-
         fun of(
-            visible: List<String>, grid: List<String>, exclude: Set<String> = emptySet(),
+            visible: List<String>, exclude: Set<String> = emptySet(),
             onScreen: Collection<String> = emptyList(), custom: Collection<String> = emptyList(),
         ): RemoteLayout {
             val names = visible.filterNot { it.uppercase() in exclude }
@@ -46,11 +44,7 @@ data class RemoteLayout(
             )
             val rest = names.filter { it !in used }
             val on = rest.filter { it.uppercase() in shown }
-            val cells = if (grid.isEmpty()) on else {
-                val placed = grid.map { n -> if (n.isNotEmpty() && on.any { it == n }) n else "" }
-                placed + on.filter { it !in placed }
-            }
-            return l.copy(extras = cells.dropLastWhile { it.isEmpty() }, available = rest.filter { it !in on })
+            return l.copy(extras = on, available = rest.filter { it !in on })
         }
     }
 }

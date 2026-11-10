@@ -64,8 +64,6 @@ object Bits {
         return BooleanArray(n) { i -> value.testBit(n - 1 - i) }
     }
 
-    fun fromLong(value: Long, bitLength: Int): BooleanArray =
-        BooleanArray(bitLength) { i -> (value ushr (bitLength - 1 - i)) and 1L == 1L }
 
     fun toHex(bits: BooleanArray): String {
         var v = java.math.BigInteger.ZERO

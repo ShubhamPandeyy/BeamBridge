@@ -43,8 +43,6 @@ data class SavedDevice(
     val archived: Boolean = false,
     /** Buttons hidden from the remote layout (still reachable through the API). */
     val hidden: List<String> = emptyList(),
-    /** User arrangement of the extra-keys grid: cell index → button name ("" = empty cell). Empty = default order. */
-    val grid: List<String> = emptyList(),
     /** Extra (non-default) keys the user put on the main remote screen. Custom keys are always on screen. */
     val onScreen: List<String> = emptyList(),
     /** D-pad as a swipe surface (swipe = arrows, tap = OK) instead of visible arrow buttons. */

@@ -3,7 +3,7 @@ package app.beambridge.core.ir
 import java.util.Base64
 
 /**
- * Interpreter for the compact "program" bytecode stored in ir_protocols.json / lcndb.db (remote_protocols.program).
+ * Interpreter for the compact "program" bytecode stored with each AC remote in ac_remotes.json (protocol.program).
  * The format is undocumented; it was reverse-engineered from the shipped datasets (154 of 156 programs decode).
  *
  *   00 hh ll        carrier frequency in Hz (big endian)

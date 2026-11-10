@@ -78,7 +78,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         when (val r = route.value) {
             Route.Hub -> return false
             is Route.Device -> home()
-            is Route.Finder -> { finder.reset(); route.value = Route.Device(r.deviceId) }
+            is Route.Finder -> {
+                finder.reset()
+                // "I don't know the brand" made a placeholder device; drop it if nothing was saved to it.
+                if (r.deviceId == placeholderDevice && graph.store.get(r.deviceId)?.buttons.isNullOrEmpty()) {
+                    graph.store.remove(r.deviceId); placeholderDevice = null; home()
+                } else route.value = Route.Device(r.deviceId)
+            }
             Route.History, Route.Scenes -> home()
             is Route.SceneEdit -> route.value = Route.Scenes
             Route.Wizard -> wizard.update {
@@ -103,7 +109,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun bindOptions(): List<BindOption> = Net.bindOptions()
 
-    /** Wi-Fi network name when Android lets us read it (needs location permission on 8.1+), else "Wi-Fi"/null. */
+    /** True once the user granted location, which Android requires before it reveals the Wi-Fi name. */
+    fun hasLocationPermission(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(getApplication(), android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** Network label for the dashboard: "Wi-Fi: HomeNet" with permission, "Wi-Fi" without, "Ethernet", or null when offline. */
     @Suppress("DEPRECATION")
     fun networkName(): String? {
         val ctx = getApplication<Application>()
@@ -111,24 +121,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return null
         return when {
             caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> {
-                val ssid = (ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager).connectionInfo?.ssid
+                val ssid = if (hasLocationPermission())
+                    (ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager).connectionInfo?.ssid
+                else null
                 ssid?.trim('"')?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }?.let { "Wi-Fi: $it" } ?: "Wi-Fi"
             }
             caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
             else -> null
-        }
-    }
-
-    /** Async availability check for the settings sheet. */
-    fun checkAddress(address: String, port: Int, onResult: (String) -> Unit) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val host = Net.resolve(address)
-            val text = when {
-                host == "" -> "Not on this phone right now"
-                bridge.isFree(host, port) -> "Free · http://${Net.publicHost(host) ?: "<phone-ip>"}:$port"
-                else -> "Port $port is in use"
-            }
-            withContext(Dispatchers.Main) { onResult(text) }
         }
     }
 
@@ -183,11 +182,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---- device editing -----------------------------------------------------------------------------
 
     fun rename(id: String, name: String) { graph.store.update(id) { it.copy(name = name.trim().ifEmpty { it.name }) } }
-    fun delete(id: String) { graph.store.remove(id); if (route.value != Route.Hub) home() }
+    fun delete(id: String) {
+        val scenesChanged = bridge.deleteDevice(id)
+        if (scenesChanged > 0) toast("Removed its steps from $scenesChanged scene${if (scenesChanged == 1) "" else "s"}")
+        if (route.value != Route.Hub) home()
+    }
     fun setArchived(id: String, archived: Boolean) { bridge.setArchived(id, archived) }
     fun setHidden(id: String, button: String, hidden: Boolean) { bridge.setHidden(id, button, hidden) }
     fun showAllHidden(id: String) { graph.store.update(id) { it.copy(hidden = emptyList()) } }
-    fun moveButton(id: String, button: String, cell: Int) { bridge.moveButton(id, button, cell) }
     fun setOnScreen(id: String, button: String, on: Boolean) { bridge.setOnScreen(id, button, on) }
     fun setSwipe(id: String, swipe: Boolean) { bridge.setSwipe(id, swipe) }
     fun grid(device: SavedDevice) = bridge.grid(device)
@@ -280,7 +282,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val have = device.buttons.map { it.name.uppercase() }.toSet()
         val seen = linkedMapOf<String, IrCode>()
         for (r in brand.remotes) {
-            if (!r.isSupported(ds.protocols)) continue
+            if (!r.supported) continue
             for (name in r.buttons.keys) if (name.uppercase() !in have && name !in seen) seen[name] = r.irCode(name)!!
         }
         return seen.entries.sortedBy { StandardKeys.sortKey(it.key) }.map { it.key to it.value }
@@ -389,9 +391,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setName(name: String) = wizard.update { it.copy(name = name) }
 
     /** Unknown brand: make an empty device of this type and open the TV finder to discover its codes. */
+    private var placeholderDevice: String? = null
+
     fun unknownBrand() {
         val type = wizard.value.type ?: DeviceType.TV
         val d = pairing.createCustom(if (type == DeviceType.SET_TOP_BOX) "My set-top box" else "My TV", type, null)
+        placeholderDevice = d.id
         wizard.value = WizardState()
         openFinder(d.id)
         toast("Pick POWER, point at the device and tap STOP when it reacts")
@@ -430,6 +435,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun testFinder(index: Int) { viewModelScope.launch(Dispatchers.Default) { report(finder.test(index)) } }
     fun acceptFinder(deviceId: String, name: String, index: Int) {
         finder.accept(deviceId, name, index)
+        if (deviceId == placeholderDevice) placeholderDevice = null
         toast("${name.ifBlank { "Button" }} saved")
     }
 }

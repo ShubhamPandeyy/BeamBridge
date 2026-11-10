@@ -1,9 +1,7 @@
 package app.beambridge.core.data
 
 import app.beambridge.core.ir.IrCode
-import app.beambridge.core.ir.IrProgram
 import app.beambridge.core.ir.IrProtocol
-import app.beambridge.core.ir.ProgramLookup
 import kotlinx.serialization.json.*
 
 /**
@@ -20,28 +18,6 @@ internal fun JsonElement?.objects(): List<JsonObject> = (this as? JsonArray).orE
 
 data class Manufacturer<R>(val id: Int, val name: String, val remotes: List<R>)
 
-// ---------------------------------------------------------------- Protocols (programs)
-
-data class ProtocolInfo(val id: Int, val title: String, val irp: String?, val program: IrProgram?)
-
-class ProtocolCatalog(val protocols: List<ProtocolInfo>) : ProgramLookup {
-    private val byId = protocols.associateBy { it.id }
-    override fun program(protocolId: Int): IrProgram? = byId[protocolId]?.program
-    val supportedCount get() = protocols.count { it.program != null }
-
-    companion object {
-        val EMPTY = ProtocolCatalog(emptyList())
-
-        fun parse(text: String): ProtocolCatalog {
-            val list = lenientJson.parseToJsonElement(text).objects().mapNotNull { o ->
-                val id = o["id"].int() ?: return@mapNotNull null
-                ProtocolInfo(id, o["title"].str() ?: "Protocol $id", o["irp_notation"].str(), o["program"].str()?.let(IrProgram::parseBase64))
-            }
-            return ProtocolCatalog(list)
-        }
-    }
-}
-
 // ---------------------------------------------------------------- TV
 
 data class TvRemote(
@@ -56,14 +32,17 @@ data class TvRemote(
         IrCode.Hex(protocolName, it, bitLength, protocolId, toggleMask)
     }
 
-    /** True when a built-in encoder or a bytecode program exists for this remote's protocol. */
-    fun isSupported(programs: ProgramLookup): Boolean =
-        IrProtocol.resolve(protocolName, protocolId) != null || protocolId?.let { programs.program(it) } != null
+    /**
+     * True when a built-in encoder exists for this remote's protocol. TV/STB "PROTOCOL_n" numbers are a different
+     * numbering from the AC protocol programs, so they are never rendered with those (see [IrProtocol.resolve]).
+     */
+    val supported: Boolean by lazy { IrProtocol.resolve(protocolName, protocolId) != null }
 }
 
 class TvCatalog(val manufacturers: List<Manufacturer<TvRemote>>) {
     val remoteCount get() = manufacturers.sumOf { it.remotes.size }
-    fun brand(id: Int) = manufacturers.firstOrNull { it.id == id }
+    private val byId by lazy { manufacturers.associateBy { it.id } }
+    fun brand(id: Int) = byId[id]
     fun remote(manufacturerId: Int, remoteId: Int) = brand(manufacturerId)?.remotes?.firstOrNull { it.remoteId == remoteId }
 
     /** Adds [extra] remotes, joining brands by name (case-insensitive). */
@@ -134,4 +113,52 @@ object StandardKeys {
         "PLAY", "PAUSE", "STOP", "REWIND", "FAST_FORWARD", "PREVIOUS", "NEXT", "RECORD",
         "RED", "GREEN", "YELLOW", "BLUE") + (0..9).map { "$it" }
     fun sortKey(name: String): Int = order.indexOf(name.uppercase()).let { if (it < 0) order.size else it }
+}
+
+// ---------------------------------------------------------------- Set-top boxes
+
+/** A DTH / cable provider and the remotes it ships. */
+data class StbProvider(val id: Int, val title: String, val type: String, val remoteIds: List<Int>)
+
+/**
+ * Set-top box remotes (stb_remotes.json, extracted once from the original lcndb.db). Key numbers use the same
+ * [StandardKeys] index as the TV dataset; protocol numbers are the TV/STB numbering ("PROTOCOL_n").
+ */
+class StbCatalog(val providers: List<StbProvider>, remotes: List<TvRemote>) {
+    private val remotesById = remotes.associateBy { it.remoteId }
+    val allRemotes: List<TvRemote> = remotes
+
+    fun providers(query: String): List<Brand> = providers.asSequence()
+        .filter { it.title.contains(query.trim(), true) }
+        .map { p -> Brand(p.id, p.title, p.remoteIds.count { remotesById[it]?.supported == true }) }
+        .filter { it.remotes > 0 }.take(300).toList()
+
+    fun remotes(providerId: Int): List<TvRemote> =
+        providers.firstOrNull { it.id == providerId }?.remoteIds.orEmpty().mapNotNull { remotesById[it] }
+
+    fun name(providerId: Int): String? = providers.firstOrNull { it.id == providerId }?.title
+
+    companion object {
+        val EMPTY = StbCatalog(emptyList(), emptyList())
+
+        fun parse(text: String): StbCatalog {
+            val root = lenientJson.parseToJsonElement(text).jsonObject
+            val providers = root["providers"].objects().mapNotNull { o ->
+                StbProvider(o["id"].int() ?: return@mapNotNull null, o["title"].str().orEmpty(), o["type"].str().orEmpty(),
+                    (o["remotes"] as? JsonArray).orEmpty().mapNotNull { it.int() })
+            }
+            val remotes = root["remotes"].objects().mapNotNull { o ->
+                val id = o["id"].int() ?: return@mapNotNull null
+                val proto = o["protocol"].int() ?: return@mapNotNull null
+                val buttons = linkedMapOf<String, String>()
+                (o["keys"] as? JsonObject)?.forEach { (k, v) ->
+                    val n = k.toIntOrNull() ?: return@forEach
+                    v.str()?.takeIf { it.isNotBlank() }?.let { buttons[StandardKeys.name(n) ?: "KEY_$n"] = it }
+                }
+                if (buttons.isEmpty()) null
+                else TvRemote(id, proto, "PROTOCOL_$proto", o["length"].int() ?: 0, o["toggle_mask"].str()?.takeIf { it.isNotBlank() }, buttons)
+            }
+            return StbCatalog(providers, remotes)
+        }
+    }
 }

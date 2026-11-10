@@ -15,7 +15,6 @@ import app.beambridge.core.server.BridgeController
 import app.beambridge.core.server.BridgeHooks
 import app.beambridge.core.server.Endpoints
 import app.beambridge.core.server.Net
-import app.beambridge.data.StbRepository
 import app.beambridge.service.AndroidIrEmitter
 import app.beambridge.service.BridgeRuntime
 import app.beambridge.service.BridgeService
@@ -33,8 +32,9 @@ class Graph(private val app: Application) {
     val settings = JsonFileSettingsStore(File(app.filesDir, "settings.json"))
     val store: DeviceStore = JsonFileDeviceStore(File(app.filesDir, "devices.json"))
     val datasets = MutableStateFlow(Datasets.EMPTY)
+    /** True once [datasets] holds the real catalogs. */
+    val ready = MutableStateFlow(false)
     val emitter = AndroidIrEmitter(app)
-    val stb = StbRepository(app)
 
     /** Base URL for "Copy URL Endpoint": the live server address, or where it would listen with current settings. */
     val endpoints = Endpoints {
@@ -45,22 +45,29 @@ class Graph(private val app: Application) {
     val history = CommandHistory(File(app.filesDir, "history.json"))
     val scenes = JsonFileSceneStore(File(app.filesDir, "scenes.json"))
     val controller = BridgeController(store, emitter, history) { datasets.value }
-    val pairing = PairingService({ datasets.value }, { stb }, controller)
-    val finder = Finder(controller, { datasets.value }, { stb }, scope)
+    val pairing = PairingService({ datasets.value }, controller)
+    val finder = Finder(controller, { datasets.value }, scope)
 
     val bridge = Bridge(controller, pairing, finder, settings, endpoints, object : BridgeHooks {
         override fun restartServer() { if (BridgeRuntime.status.value.running) BridgeService.start(app) }
         override fun boundTo(): Pair<String?, Int>? = BridgeRuntime.bound
-    }, scenes)
+    }, scenes, isReady = { ready.value })
 
     private val notifier by lazy { SendNotifier(app) }
 
     init {
-        scope.launch(Dispatchers.IO) { datasets.value = Datasets.load { app.assets.open(it) } }
-        // Silent "Power on beamed to …" confirmation (the finder's rapid-fire sends aren't logged, so no spam).
-        history.listener = { e -> if (settings.settings.value.notifyOnSend) notifier.show(e) }
+        scope.launch(Dispatchers.IO) {
+            datasets.value = Datasets.load { runCatching { app.assets.open(it) }.getOrNull() }
+            ready.value = true
+        }
+        // Silent "Power on beamed to …" confirmation for sends you can't see (API, web, scenes, or the app in the
+        // background). While the app is in front the on-screen feedback already confirms it.
+        history.listener = { e -> if (settings.settings.value.notifyOnSend && !AppVisibility.foreground) notifier.show(e) }
     }
 }
+
+/** Whether an activity of ours is on screen. */
+object AppVisibility { @Volatile var foreground = false }
 
 class BeamBridgeApp : Application() {
     lateinit var graph: Graph

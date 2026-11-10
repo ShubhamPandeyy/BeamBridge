@@ -5,7 +5,7 @@ import kotlin.test.*
 
 class GridTest {
     private val keys = listOf("POWER", "VOL_MUTE", "UP", "DOWN", "LEFT", "RIGHT", "OK", "VOL_UP", "VOL_DOWN", "HOME", "BACK", "MENU", "NETFLIX", "INPUT")
-    private val layout = RemoteLayout.of(keys, emptyList(), onScreen = listOf("NETFLIX", "INPUT"))
+    private val layout = RemoteLayout.of(keys, onScreen = listOf("NETFLIX", "INPUT"))
 
     @Test fun defaultGridFitsFiveByEight() {
         val g = RemoteGrid.resolve(layout, emptyList(), 5, 8)
@@ -31,5 +31,18 @@ class GridTest {
         assertEquals(Tile("POWER", 0, 0), g.tiles.first { it.id == "POWER" })
         assertNotNull(g.tiles.firstOrNull { it.id == "NETFLIX" })
         for (a in g.tiles) for (b in g.tiles) if (a !== b) assertFalse(a.overlaps(b))
+    }
+}
+
+class StorageTest {
+    @Test fun corruptFileIsKeptAside() {
+        val dir = kotlin.io.path.createTempDirectory("bb").toFile()
+        val f = java.io.File(dir, "devices.json").apply { writeText("{ not json") }
+        val store = JsonFileDeviceStore(f)
+        kotlin.test.assertTrue(store.devices.value.isEmpty())
+        store.add(SavedDevice("tv", "TV", DeviceType.TV))
+        val backup = dir.listFiles()!!.single { it.name.startsWith("devices.json.corrupt-") }
+        kotlin.test.assertEquals("{ not json", backup.readText())
+        dir.deleteRecursively()
     }
 }

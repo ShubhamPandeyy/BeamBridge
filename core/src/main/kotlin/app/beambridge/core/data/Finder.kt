@@ -1,7 +1,6 @@
 package app.beambridge.core.data
 
 import app.beambridge.core.ir.IrCode
-import app.beambridge.core.ir.ProgramLookup
 import app.beambridge.core.server.BridgeController
 import app.beambridge.core.server.SendResult
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +24,8 @@ data class FinderState(
     /** 0 = the 5 most recent codes, 1 = the 5 before those, … */
     val page: Int = 0,
     val intervalMs: Long = 900,
+    /** Who started this run (app / web / api), so two clients don't silently reset each other. */
+    val owner: String = "app",
 ) {
     val done: Boolean get() = total > 0 && sent >= total && !running
 }
@@ -36,34 +37,33 @@ data class FinderState(
 class Finder(
     private val controller: BridgeController,
     private val datasets: () -> Datasets,
-    private val stb: () -> StbSource?,
     private val scope: CoroutineScope,
 ) {
     private val _state = MutableStateFlow(FinderState())
     val state: StateFlow<FinderState> = _state.asStateFlow()
-    private var codes: List<FinderCode> = emptyList()
-    private var job: Job? = null
+    @Volatile private var codes: List<FinderCode> = emptyList()
+    @Volatile private var job: Job? = null
 
     /** All distinct codes in the catalogs (TV json, extra remotes, set-top DB) for [key]. */
     fun codesFor(key: String): List<FinderCode> {
         val ds = datasets()
-        val programs: ProgramLookup = ds.protocols
         val out = LinkedHashMap<Triple<String, String, Int>, FinderCode>()
         fun addRemote(brand: String, r: TvRemote) {
-            if (!r.isSupported(programs)) return
+            if (!r.supported) return
             val name = r.buttons.keys.firstOrNull { it.equals(key, true) } ?: return
             val code = r.irCode(name) as IrCode.Hex
             out.putIfAbsent(Triple(code.protocol, code.code.lowercase(), code.bits), FinderCode("$brand · ${r.remoteId}", code))
         }
         ds.tv.manufacturers.forEach { m -> m.remotes.forEach { addRemote(m.name, it) } }
-        runCatching { stb()?.allRemotes() }.getOrNull()?.forEach { addRemote("Set-top", it) }
+        ds.stb.allRemotes.forEach { addRemote("Set-top", it) }
         return out.values.toList()
     }
 
-    fun start(key: String, intervalMs: Long = _state.value.intervalMs) {
+    @Synchronized
+    fun start(key: String, intervalMs: Long = _state.value.intervalMs, owner: String = "app") {
         job?.cancel()
         codes = codesFor(key)
-        _state.value = FinderState(key = key.uppercase(), running = codes.isNotEmpty(), total = codes.size, intervalMs = intervalMs)
+        _state.value = FinderState(key = key.uppercase(), running = codes.isNotEmpty(), total = codes.size, intervalMs = intervalMs, owner = owner)
         if (codes.isNotEmpty()) loop()
     }
 

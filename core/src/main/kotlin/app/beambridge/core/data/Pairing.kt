@@ -9,20 +9,12 @@ data class Brand(val id: Int, val name: String, val remotes: Int)
 /** One remote profile to try during pairing. */
 data class Candidate(val ref: CatalogRef, val label: String, val tv: TvRemote? = null, val ac: AcRemote? = null)
 
-/** Set-top box remotes live in lcndb.db (SQLite), which only the Android app can open. */
-interface StbSource {
-    fun providers(query: String): List<Brand>
-    fun remotes(providerId: Int): List<TvRemote>
-    fun allRemotes(): List<TvRemote> = emptyList()
-}
-
 /**
  * Pairing logic shared by the app wizard and the web UI: brands, candidate remotes, test presses and device creation.
  * Candidates are only collapsed when two remotes are exactly identical, so every distinct profile gets tried.
  */
 class PairingService(
     private val datasets: () -> Datasets,
-    private val stb: () -> StbSource?,
     private val controller: BridgeController,
 ) {
     private val store get() = controller.store
@@ -32,10 +24,10 @@ class PairingService(
         val ds = datasets()
         return when (type) {
             DeviceType.TV -> ds.tv.manufacturers.filter { it.name.contains(q, true) }
-                .map { m -> Brand(m.id, m.name, m.remotes.count { it.isSupported(ds.protocols) }) }.filter { it.remotes > 0 }
+                .map { m -> Brand(m.id, m.name, m.remotes.count { it.supported }) }.filter { it.remotes > 0 }
             DeviceType.AC -> ds.ac.manufacturers.filter { it.name.contains(q, true) }
                 .map { m -> Brand(m.id, m.name, m.remotes.count { it.supported }) }.filter { it.remotes > 0 }
-            DeviceType.SET_TOP_BOX -> stb()?.providers(q).orEmpty()
+            DeviceType.SET_TOP_BOX -> ds.stb.providers(q)
             DeviceType.OTHER -> emptyList()
         }
     }
@@ -43,13 +35,13 @@ class PairingService(
     fun candidates(type: DeviceType, brandId: Int): List<Candidate> {
         val ds = datasets()
         return when (type) {
-            DeviceType.TV -> ds.tv.brand(brandId)?.remotes.orEmpty().filter { it.isSupported(ds.protocols) }
+            DeviceType.TV -> ds.tv.brand(brandId)?.remotes.orEmpty().filter { it.supported }
                 .distinctBy { Triple(it.protocolName, it.bitLength, it.buttons) }
                 .map { Candidate(CatalogRef("tv", brandId, it.remoteId), "Remote ${it.remoteId}", tv = it) }
             DeviceType.AC -> ds.ac.manufacturers.firstOrNull { it.id == brandId }?.remotes.orEmpty().filter { it.supported }
                 .distinctBy { Triple(it.protocolId, it.bitLength, it.codes) }
                 .map { Candidate(CatalogRef("ac", brandId, it.remoteId), it.name, ac = it) }
-            DeviceType.SET_TOP_BOX -> stb()?.remotes(brandId).orEmpty().filter { it.isSupported(ds.protocols) }
+            DeviceType.SET_TOP_BOX -> ds.stb.remotes(brandId).filter { it.supported }
                 .distinctBy { Triple(it.protocolName, it.bitLength, it.buttons) }
                 .map { Candidate(CatalogRef("stb", brandId, it.remoteId), "Remote ${it.remoteId}", tv = it) }
             DeviceType.OTHER -> emptyList()
@@ -103,6 +95,7 @@ class PairingService(
     fun brandName(type: DeviceType, brandId: Int): String? = when (type) {
         DeviceType.TV -> datasets().tv.brand(brandId)?.name
         DeviceType.AC -> datasets().ac.manufacturers.firstOrNull { it.id == brandId }?.name
+        DeviceType.SET_TOP_BOX -> datasets().stb.name(brandId)
         else -> null
     }
 }

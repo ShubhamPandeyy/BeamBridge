@@ -21,30 +21,43 @@ data class HistoryEntry(
 )
 
 /**
- * The last [max] commands, newest first. Kept in memory and (optionally) saved to [file] so it survives restarts.
- * [listener] fires after every record; the app uses it for the "beamed" notification.
+ * The last [max] commands, newest first. Kept in memory and saved to [file] so it survives restarts.
+ * Saving is batched: a burst of presses (or a finder run) is written once, [writeDelayMs] after the last one, off the
+ * sending thread. [listener] fires after every record; the app uses it for the "beamed" notification.
  */
-class CommandHistory(private val file: File? = null, private val max: Int = 200) {
+class CommandHistory(private val file: File? = null, private val max: Int = 200, private val writeDelayMs: Long = 1500) {
     private val json = Json { ignoreUnknownKeys = true }
     private val serializer = ListSerializer(HistoryEntry.serializer())
-    private val state = MutableStateFlow(load())
+    private val state = MutableStateFlow(file?.let { SafeFile.read(it, emptyList()) { t -> json.decodeFromString(serializer, t) } }.orEmpty())
     val entries: StateFlow<List<HistoryEntry>> = state.asStateFlow()
     @Volatile var listener: ((HistoryEntry) -> Unit)? = null
 
-    private fun load(): List<HistoryEntry> =
-        runCatching { file?.takeIf { it.exists() }?.readText()?.let { json.decodeFromString(serializer, it) } }.getOrNull().orEmpty()
+    private val writer by lazy {
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "history-writer").apply { isDaemon = true } }
+    }
+    private var pending: java.util.concurrent.ScheduledFuture<*>? = null
 
     fun record(e: HistoryEntry) {
         synchronized(this) {
             state.value = (listOf(e) + state.value).take(max)
-            file?.let { f -> runCatching {
-                val tmp = File(f.parentFile, f.name + ".tmp")
-                tmp.writeText(json.encodeToString(serializer, state.value))
-                tmp.renameTo(f)
-            } }
+            scheduleWrite()
         }
         runCatching { listener?.invoke(e) }
     }
 
-    fun clear() = synchronized(this) { state.value = emptyList(); file?.delete() }
+    private fun scheduleWrite() {
+        if (file == null) return
+        if (writeDelayMs <= 0) { flush(); return }
+        pending?.cancel(false)
+        pending = writer.schedule({ flush() }, writeDelayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
+
+    /** Writes the current entries now (also called when the app goes to the background). */
+    fun flush() {
+        val f = file ?: return
+        val snapshot = synchronized(this) { state.value }
+        runCatching { SafeFile.write(f, json.encodeToString(serializer, snapshot)) }
+    }
+
+    fun clear() = synchronized(this) { pending?.cancel(false); state.value = emptyList(); file?.delete() }
 }

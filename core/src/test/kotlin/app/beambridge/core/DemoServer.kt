@@ -15,12 +15,12 @@ class DemoServer {
         val ds = Datasets.load { File(dir, it).takeIf(File::exists)?.inputStream() }
         val store = InMemoryDeviceStore()
         val controller = BridgeController(store, FakeEmitter()) { ds }
-        val pairing = PairingService({ ds }, { null }, controller)
+        val pairing = PairingService({ ds }, controller)
         val tcl = pairing.candidates(DeviceType.TV, 22).last()
         pairing.create(DeviceType.TV, tcl, "Living room TV", "TCL")
         val lgAc = ds.ac.manufacturers.first { it.name.startsWith("LG") }
         pairing.create(DeviceType.AC, pairing.candidates(DeviceType.AC, lgAc.id).first(), "Bedroom AC", "LG")
-        val bridge = Bridge(controller, pairing, Finder(controller, { ds }, { null }, CoroutineScope(Dispatchers.Default)),
+        val bridge = Bridge(controller, pairing, Finder(controller, { ds }, CoroutineScope(Dispatchers.Default)),
             InMemorySettingsStore(), Endpoints { "http://192.168.1.50:8080" })
         BridgeHttpServer("127.0.0.1", 8099, bridge).startServer()
         Thread.sleep(600_000)

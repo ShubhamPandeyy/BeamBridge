@@ -147,7 +147,9 @@ private fun StepPicker(vm: MainViewModel, devices: List<SavedDevice>, current: S
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     vm.buttonNames(d).forEach { b ->
-                        AssistChip(onClick = { onPick(SceneStep(d.id, b)) }, label = { Text(prettyName(b)) }, leadingIcon = buttonIcon(b)?.let { ic -> { Icon(ic, null, Modifier.size(18.dp)) } })
+                        val ic = buttonIcon(b)
+                        if (ic != null) AssistChip(onClick = { onPick(SceneStep(d.id, b)) }, label = { Text(prettyName(b)) }, leadingIcon = { Icon(ic, null, Modifier.size(18.dp)) })
+                        else AssistChip(onClick = { onPick(SceneStep(d.id, b)) }, label = { Text(prettyName(b)) })
                     }
                 }
             }

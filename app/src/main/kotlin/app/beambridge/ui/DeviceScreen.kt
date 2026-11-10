@@ -70,13 +70,20 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
     var menu by remember { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
-    val layout = remember(device) { vm.layout(device) }
-    val grid = remember(device) { vm.grid(device) }
+    val datasets by vm.datasets.collectAsStateWithLifecycle()
+    // Re-derive when the code datasets finish loading (an AC opened at startup otherwise keeps an empty layout).
+    val layout = remember(device, datasets) { vm.layout(device) }
+    val grid = remember(device, datasets) { vm.grid(device) }
+    // Over the lock screen the remote only sends keys: editing, deleting and copying URLs need an unlock.
+    val locked = rememberKeyguardLocked()
     val feedback by vm.feedback.collectAsStateWithLifecycle()
     val prefs by vm.settings.collectAsStateWithLifecycle()
 
     val press: (String) -> Unit = { n -> haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); vm.press(device.id, n) }
-    val long: (String) -> Unit = { n -> haptics.performHapticFeedback(HapticFeedbackType.LongPress); sheet = Sheet.Key(n) }
+    val long: (String) -> Unit = { n ->
+        if (locked) vm.toast("Unlock your phone to edit keys")
+        else { haptics.performHapticFeedback(HapticFeedbackType.LongPress); sheet = Sheet.Key(n) }
+    }
 
     Scaffold(
         topBar = {
@@ -98,6 +105,7 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
                         Button(onClick = { editing = false }, Modifier.padding(end = 8.dp)) { Text("Done") }
                         return@TopAppBar
                     }
+                    if (locked) { Icon(Icons.Rounded.Lock, "Locked: unlock to edit", Modifier.padding(end = 16.dp)); return@TopAppBar }
                     IconButton(onClick = { sheet = Sheet.Edit(null) }) { Icon(Icons.Rounded.Add, "Add button") }
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "More") }
@@ -135,7 +143,7 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
             GridRemote(
                 grid, layout, device.swipeDpad, editing, feedback,
                 press = press, long = long,
-                onEditStart = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); editing = true },
+                onEditStart = { if (!locked) { haptics.performHapticFeedback(HapticFeedbackType.LongPress); editing = true } },
                 onMove = { t, c, r, w, h -> vm.moveTile(device.id, t.id, c, r, w, h) },
             )
             if (device.buttons.isEmpty() && device.type != DeviceType.AC) {
@@ -162,9 +170,9 @@ private fun SendStatus(f: SendFeedback?) {
     AnimatedVisibility(f != null, enter = fadeIn(), exit = fadeOut()) {
         val cs = MaterialTheme.colorScheme
         val (text, color) = when (f?.state) {
-            SendFeedback.State.SENDING -> "Sending ${prettyName(f.key)}…" to cs.onSurfaceVariant
-            SendFeedback.State.SENT -> "✓ ${prettyName(f.key)} sent" to cs.primary
-            SendFeedback.State.FAILED -> "✕ ${f.message ?: "Failed"}" to cs.error
+            SendFeedback.State.SENDING -> "Sending ${prettyName(f!!.key)}…" to cs.onSurfaceVariant
+            SendFeedback.State.SENT -> "✓ ${prettyName(f!!.key)} sent" to cs.primary
+            SendFeedback.State.FAILED -> "✕ ${f!!.message ?: "Failed"}" to cs.error
             null -> "" to cs.onSurface
         }
         Text(text, style = MaterialTheme.typography.labelMedium, color = color, maxLines = 1)
@@ -472,3 +480,22 @@ private fun RenameDialog(current: String, onDismiss: () -> Unit, onSave: (String
     )
 }
 
+
+/** Whether the keyguard is showing; updates when the phone is unlocked or the screen turns off. */
+@Composable
+private fun rememberKeyguardLocked(): Boolean {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val km = remember { ctx.getSystemService(android.app.KeyguardManager::class.java) }
+    var locked by remember { mutableStateOf(km?.isKeyguardLocked == true) }
+    DisposableEffect(Unit) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: android.content.Context?, i: android.content.Intent?) { locked = km?.isKeyguardLocked == true }
+        }
+        val filter = android.content.IntentFilter().apply {
+            addAction(android.content.Intent.ACTION_USER_PRESENT); addAction(android.content.Intent.ACTION_SCREEN_OFF); addAction(android.content.Intent.ACTION_SCREEN_ON)
+        }
+        androidx.core.content.ContextCompat.registerReceiver(ctx, receiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { runCatching { ctx.unregisterReceiver(receiver) } }
+    }
+    return locked
+}

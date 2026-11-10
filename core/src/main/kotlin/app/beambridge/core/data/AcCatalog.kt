@@ -43,8 +43,8 @@ data class AcRemote(
 
 class AcCatalog(val manufacturers: List<Manufacturer<AcRemote>>) {
     val remoteCount get() = manufacturers.sumOf { it.remotes.size }
-    fun remote(manufacturerId: Int, remoteId: Int) =
-        manufacturers.firstOrNull { it.id == manufacturerId }?.remotes?.firstOrNull { it.remoteId == remoteId }
+    private val index by lazy { manufacturers.flatMap { m -> m.remotes.map { (m.id to it.remoteId) to it } }.toMap() }
+    fun remote(manufacturerId: Int, remoteId: Int) = index[manufacturerId to remoteId]
 
     companion object {
         val EMPTY = AcCatalog(emptyList())
@@ -145,8 +145,6 @@ object AcCodec {
         val (value, n) = frameWithWidth(remote, state, previous)
         return program.render(bits(value, n))
     }
-
-    fun hex(remote: AcRemote, state: AcState): String = frameWithWidth(remote, state).let { (v, n) -> Bits.toHex(bits(v, n)) }
 
     /** Named one-tap actions exposed as buttons (and therefore as copyable URLs) for an AC. */
     fun actions(remote: AcRemote?): List<String> = buildList {
