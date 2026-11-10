@@ -131,6 +131,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Async availability check for the settings sheet. */
+    fun checkAddress(address: String, port: Int, onResult: (String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val host = Net.resolve(address)
+            val text = when {
+                host == "" -> "Not on this phone right now"
+                bridge.isFree(host, port) -> "Free · http://${Net.publicHost(host) ?: "<phone-ip>"}:$port"
+                else -> "Port $port is in use"
+            }
+            withContext(Dispatchers.Main) { onResult(text) }
+        }
+    }
+
     /** @return error text, or null when saved. */
     fun saveSettings(next: BridgeSettings): String? {
         val err = bridge.applySettings(next)

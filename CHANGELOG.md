@@ -30,6 +30,7 @@ Fixes everything from the project audit.
 - Settings no longer overwrite app preferences changed while the sheet was open.
 
 **Releases**
+- GitHub Actions bumped to v5 (Node 24; removes the Node.js 20 deprecation warning).
 - Pushes to `main` refresh one *nightly* pre-release. *Run workflow* or a `v*` tag publishes a real release.
 
 **Cleanup**
