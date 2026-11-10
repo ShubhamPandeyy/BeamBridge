@@ -2,6 +2,9 @@ package app.beambridge.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -9,9 +12,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,13 +37,19 @@ fun HubScreen(vm: MainViewModel, devices: List<SavedDevice>, server: ServerStatu
     val active = devices.filterNot { it.archived }
     val archived = devices.filter { it.archived }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scenes by vm.scenes.collectAsStateWithLifecycle()
+    val runningScene by vm.runningScene.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = Modifier.nestedScrollFix(scroll),
         topBar = {
             LargeTopAppBar(
                 title = { Text("BeamBridge") },
-                actions = { IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, "Settings") } },
+                actions = {
+                    IconButton(onClick = { vm.route.value = app.beambridge.Route.Scenes }) { Icon(Icons.Rounded.AutoAwesome, "Scenes") }
+                    IconButton(onClick = { vm.route.value = app.beambridge.Route.History }) { Icon(Icons.Rounded.History, "Command history") }
+                    IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, "Settings") }
+                },
                 scrollBehavior = scroll,
             )
         },
@@ -52,7 +61,18 @@ fun HubScreen(vm: MainViewModel, devices: List<SavedDevice>, server: ServerStatu
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { ServerCard(vm, server) }
+            item { ServerCard(vm, server, devices) }
+            if (scenes.isNotEmpty()) item(key = "scenes") {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    scenes.forEach { sc ->
+                        AssistChip(
+                            onClick = { vm.runScene(sc) }, enabled = runningScene == null,
+                            label = { Text(sc.name) },
+                            leadingIcon = { Icon(if (runningScene == sc.name) Icons.Rounded.HourglassTop else Icons.Rounded.PlayArrow, null, Modifier.size(18.dp)) },
+                        )
+                    }
+                }
+            }
             if (active.isEmpty()) item { EmptyState() }
             items(active, key = { it.id }) { d -> DeviceCard(vm, d, onLong = { menuFor = d }, modifier = Modifier.animateItem()) }
             if (archived.isNotEmpty()) {
@@ -73,7 +93,7 @@ fun HubScreen(vm: MainViewModel, devices: List<SavedDevice>, server: ServerStatu
     menuFor?.let { d ->
         ModalBottomSheet(onDismissRequest = { menuFor = null }) {
             Text(d.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-            SheetAction(Icons.AutoMirrored.Rounded.OpenInNew, "Open") { menuFor = null; vm.open(d.id) }
+            SheetAction(Icons.Rounded.OpenInNew, "Open") { menuFor = null; vm.open(d.id) }
             if (d.archived) SheetAction(Icons.Rounded.Unarchive, "Restore from archive") { vm.setArchived(d.id, false); menuFor = null }
             else SheetAction(Icons.Rounded.Archive, "Archive") { vm.setArchived(d.id, true); menuFor = null; vm.toast("${d.name} archived") }
             SheetAction(Icons.Rounded.DeleteOutline, "Delete", danger = true) { confirmDelete = d; menuFor = null }
@@ -121,27 +141,59 @@ private fun EmptyState() {
 }
 
 @Composable
-private fun ServerCard(vm: MainViewModel, server: ServerStatus) {
-    ElevatedCard(
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-    ) {
-        Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            IconBadge(if (server.running) Icons.Rounded.Sensors else Icons.Rounded.SensorsOff, size = 52.dp)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    server.url ?: if (server.running) "No Wi-Fi" else "Server off",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-                FlowRowCompat {
-                    StatusPill(if (server.running) "Online" else "Stopped", good = server.running)
-                    if (!vm.emitterAvailable) StatusPill("No IR emitter", good = false)
-                    server.error?.let { StatusPill(it, good = false) }
+private fun ServerCard(vm: MainViewModel, server: ServerStatus, devices: List<SavedDevice>) {
+    val cs = MaterialTheme.colorScheme
+    var showError by rememberSaveable { mutableStateOf(false) }
+    val network = remember(server) { vm.networkName() }
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val active = devices.count { !it.archived }
+    val container by androidx.compose.animation.animateColorAsState(if (server.running && server.error == null) cs.primaryContainer else if (server.error != null) cs.errorContainer else cs.surfaceContainerHighest, label = "card")
+    val content = if (server.running && server.error == null) cs.onPrimaryContainer else if (server.error != null) cs.onErrorContainer else cs.onSurface
+    ElevatedCard(shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.elevatedCardColors(containerColor = container, contentColor = content)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                IconBadge(if (server.running) Icons.Rounded.Sensors else Icons.Rounded.SensorsOff, size = 56.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        when { server.error != null -> "Needs attention"; server.running -> "Bridge online"; else -> "Bridge off" },
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                    Text(
+                        listOfNotNull(network ?: if (server.running) "No Wi-Fi" else null, if (settings.authMode.name == "PASSWORD") "Password on" else "Guest access").joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Switch(checked = server.running, onCheckedChange = vm::setServerRunning)
+            }
+            server.url?.let { url ->
+                Surface(shape = CircleShape, color = cs.surface.copy(alpha = 0.6f)) {
+                    Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(url, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, color = cs.onSurface)
+                        IconButton(onClick = { vm.copyText("Bridge URL", url) }) { Icon(Icons.Rounded.ContentCopy, "Copy address", tint = cs.onSurface) }
+                    }
                 }
             }
-            Switch(checked = server.running, onCheckedChange = vm::setServerRunning)
+            FlowRowCompat {
+                StatusPill("$active device${if (active == 1) "" else "s"}", good = true)
+                StatusPill(if (vm.emitterAvailable) "IR emitter ready" else "No IR emitter", good = vm.emitterAvailable)
+            }
+            server.error?.let { err ->
+                Surface(onClick = { showError = !showError }, shape = MaterialTheme.shapes.medium, color = cs.surface.copy(alpha = 0.5f)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.ErrorOutline, null, tint = cs.error)
+                            Text(err.lineSequence().first(), Modifier.weight(1f).padding(horizontal = 8.dp), color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Icon(if (showError) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (showError) "Hide details" else "Show details", tint = cs.onSurface)
+                        }
+                        androidx.compose.animation.AnimatedVisibility(showError) {
+                            Text(
+                                "$err\n\nCheck Settings → Network: pick another port, or Automatic address and make sure Wi-Fi is on.",
+                                Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurface,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -163,7 +215,7 @@ private fun DeviceCard(vm: MainViewModel, device: SavedDevice, onLong: () -> Uni
             onClick = { vm.open(device.id) },
             onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onLong() },
         ),
-    ) {
+    ) { Column {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             IconBadge(deviceIcon(device.type))
             Column(Modifier.weight(1f)) {
@@ -175,5 +227,18 @@ private fun DeviceCard(vm: MainViewModel, device: SavedDevice, onLong: () -> Uni
             }
             if (power != null && !dimmed) FilledTonalIconButton(onClick = { vm.press(device.id, power) }) { Icon(Icons.Rounded.PowerSettingsNew, "Power") }
         }
+        val favs = device.favorites.filter { f -> vm.buttonNames(device).any { it.equals(f, true) } }
+        if (favs.isNotEmpty() && !dimmed) Row(
+            Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            favs.forEach { f ->
+                FilledTonalButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); vm.press(device.id, f) }, contentPadding = PaddingValues(horizontal = 14.dp)) {
+                    buttonIcon(f)?.let { Icon(it, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)) }
+                    Text(prettyName(f), maxLines = 1)
+                }
+            }
+        }
     }
+}
 }

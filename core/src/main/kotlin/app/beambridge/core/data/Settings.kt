@@ -23,6 +23,21 @@ data class BridgeSettings(
     val password: String = "",
     val wakeLock: Boolean = true,
     val autoStart: Boolean = false,
+    // ---- app-only preferences (not exposed to the web UI) ----
+    /** "system" = Material You wallpaper colours (Android 12+), otherwise a preset palette name, see the app's Theme.kt. */
+    val theme: String = "system",
+    /** "auto" | "light" | "dark" */
+    val darkMode: String = "auto",
+    /** Show an open remote over the lock screen. */
+    val lockScreen: Boolean = false,
+    /** Phone volume keys control the open remote (both together = power). */
+    val volumeKeys: Boolean = true,
+    /** Silent "X beamed to Y" notification after each command. */
+    val notifyOnSend: Boolean = true,
+    /** First-run onboarding finished. */
+    val onboarded: Boolean = false,
+    /** The "long-press a key to edit" tip was dismissed. */
+    val tipLongPress: Boolean = false,
 ) {
     fun validate(): String? = when {
         port !in 1024..65535 -> "Port must be 1024-65535"

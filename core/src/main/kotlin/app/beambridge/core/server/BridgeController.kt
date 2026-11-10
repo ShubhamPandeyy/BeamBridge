@@ -25,16 +25,31 @@ sealed interface SendResult {
 class BridgeController(
     val store: DeviceStore,
     private val emitter: IrEmitter,
+    val history: CommandHistory = CommandHistory(),
     private val datasets: () -> Datasets,
 ) {
+    private fun log(device: SavedDevice?, button: String, source: String, r: SendResult) = history.record(
+        HistoryEntry(
+            time = System.currentTimeMillis(), device = device?.id, deviceName = device?.name, button = button, source = source,
+            ok = r is SendResult.Ok, message = when (r) { is SendResult.Ok -> null; is SendResult.Failed -> r.message; is SendResult.NotFound -> r.message },
+        ),
+    )
+
     private val toggles = ConcurrentHashMap<String, Boolean>()
     private val lock = Any()
 
     val emitterAvailable: Boolean get() = emitter.isAvailable
 
-    fun send(code: IrCode, toggleKey: String? = null): SendResult = try {
-        val toggle = toggleKey?.let { k -> toggles.compute(k) { _, v -> !(v ?: true) }!! } ?: false
-        transmit(IrCodeEncoder.encode(code, toggle, datasets().protocols))
+    /** Sends a code that isn't a saved button. Logged to history when [label] is given. */
+    fun send(code: IrCode, toggleKey: String? = null, label: String? = null, source: String = "app"): SendResult =
+        sendCode(code, toggleKey).also { if (label != null) log(null, label, source, it) }
+
+    private fun sendCode(code: IrCode, toggleKey: String? = null): SendResult = try {
+        // RC5/RC6 toggle phase: computed here, but only committed once the frame actually went out.
+        val toggle = toggleKey?.let { k -> !(toggles[k] ?: true) } ?: false
+        transmit(IrCodeEncoder.encode(code, toggle, datasets().protocols)).also { r ->
+            if (r is SendResult.Ok && toggleKey != null) toggles[toggleKey] = toggle
+        }
     } catch (e: IrEncodingException) {
         SendResult.Failed(e.message ?: "Encoding failed")
     } catch (e: Exception) {
@@ -50,6 +65,7 @@ class BridgeController(
 
     /** One-off AC frame for a catalog remote that is not saved yet (pairing wizard). */
     fun testAc(remote: AcRemote, state: AcState, previous: AcState? = null): SendResult = try {
+        AcCodec.validate(remote, state)?.let { throw IrEncodingException(it) }
         transmit(AcCodec.signal(remote, state, previous))
     } catch (e: IrEncodingException) {
         SendResult.Failed(e.message ?: "AC encoding failed")
@@ -68,32 +84,48 @@ class BridgeController(
     /** Visible buttons only (hidden ones stay callable through the API). */
     fun visibleButtons(device: SavedDevice): List<String> = buttonNames(device).filterNot { n -> device.hidden.any { it.equals(n, true) } }
 
-    fun blast(deviceId: String, buttonName: String): SendResult {
-        val device = store.get(deviceId) ?: return SendResult.NotFound("Unknown device '$deviceId'")
-        device.button(buttonName)?.let { return send(it.code, toggleKey = device.id) }
+    fun blast(deviceId: String, buttonName: String, source: String = "app"): SendResult {
+        val device = store.get(deviceId)
+        val r = blastInner(device, deviceId, buttonName)
+        log(device, device?.button(buttonName)?.name ?: buttonName.uppercase(), source, r)
+        return r
+    }
+
+    private fun blastInner(device: SavedDevice?, deviceId: String, buttonName: String): SendResult {
+        device ?: return SendResult.NotFound("Unknown device '$deviceId'")
+        device.button(buttonName)?.let { return sendCode(it.code, toggleKey = device.id) }
         if (device.type == DeviceType.AC) {
             val remote = acRemote(device)
-            val current = device.acState ?: AcState(temperature = remote?.defaultTemperature ?: 24)
+            val stored = device.acState ?: AcState(temperature = remote?.defaultTemperature ?: 24)
+            val current = remote?.let { AcCodec.normalize(it, stored) } ?: stored
             val next = AcCodec.apply(remote, current, buttonName)
             if (next != null) return sendAc(device, remote, current, next)
         }
         return SendResult.NotFound("Device '${device.id}' has no button '$buttonName'")
     }
 
-    fun raw(frequency: Int, pattern: List<Int>) = send(IrCode.Raw(frequency, pattern))
+    fun raw(frequency: Int, pattern: List<Int>, source: String = "app") = send(IrCode.Raw(frequency, pattern), label = "RAW", source = source)
 
     /** Applies an AC state patch, transmits it, and persists the new state on success. */
-    fun ac(deviceId: String, patch: (AcState) -> AcState): Pair<SendResult, AcState?> {
+    fun ac(deviceId: String, source: String = "app", patch: (AcState) -> AcState): Pair<SendResult, AcState?> {
+        val (r, s) = acInner(deviceId, patch)
+        val d = store.get(deviceId)
+        log(d, s?.let { "AC ${if (it.power) "${it.mode} ${it.temperature}° fan ${it.fan}" else "off"}" } ?: "AC", source, r)
+        return r to s
+    }
+
+    private fun acInner(deviceId: String, patch: (AcState) -> AcState): Pair<SendResult, AcState?> {
         val device = store.get(deviceId) ?: return SendResult.NotFound("Unknown device '$deviceId'") to null
         if (device.type != DeviceType.AC) return SendResult.Failed("'${device.id}' is not an AC") to null
         val remote = acRemote(device) ?: return SendResult.Failed("AC profile for '${device.id}' not found in ac_remotes.json") to null
-        val current = device.acState ?: AcState(temperature = remote.defaultTemperature)
+        val current = AcCodec.normalize(remote, device.acState ?: AcState(temperature = remote.defaultTemperature))
         val next = patch(current)
         return sendAc(device, remote, current, next) to next
     }
 
     private fun sendAc(device: SavedDevice, remote: AcRemote?, current: AcState, next: AcState): SendResult {
         if (remote == null) return SendResult.Failed("AC profile for '${device.id}' not found in ac_remotes.json")
+        AcCodec.validate(remote, next)?.let { return SendResult.Failed(it) }
         val result = try {
             transmit(AcCodec.signal(remote, next, current))
         } catch (e: IrEncodingException) {

@@ -27,13 +27,19 @@ password mode on (Settings), every route needs HTTP Basic auth.
 | POST | `/api/raw` | `ir` free text (`NEC 0x20DF10EF 32`, raw µs list, Pronto), or `protocol`+`code`[+`bits`], `pronto`, `frequency`+`pattern` | send any code |
 | GET/POST | `/api/ac` | `device`, optional `power` `mode` `temp` `fan` | new AC state |
 | GET / POST | `/api/devices` | POST: `name`, optional `type`, `button`, `ir` | list / create custom device |
-| GET / POST / DELETE | `/api/devices/{id}` | POST: `name`, `archived` | read, rename/archive, delete |
-| POST / DELETE | `/api/devices/{id}/buttons[/{name}]` | `name`+`ir` (add/edit), `hidden=true/false`, `cell=N` (move on grid) | edit keys |
+| GET / POST / DELETE | `/api/devices/{id}` | POST: `name`, `archived`, `swipe` | read, rename/archive, delete |
+| POST / DELETE | `/api/devices/{id}/buttons[/{name}]` | `name`+`ir` (add/edit), `hidden=true/false`, `onscreen=true/false` (add to main screen), `cell=N` (move on grid) | edit keys |
 | GET | `/api/catalog/brands` | `type`, `q` | pairing: brands |
 | GET | `/api/catalog/candidates` | `type`, `brand`, `on` | pairing: codes to try |
 | POST | `/api/catalog/test` | `type`, `brand`, `index`, `on` | pairing: send the test key |
 | GET | `/api/finder`, `/api/finder/keys` | | TV finder state, keys |
 | POST | `/api/finder/{start,stop,resume,page,test,accept,reset}` | `key`, `page`, `index`, `device`, `name` | TV finder |
+| POST | `/api/devices/{id}/tiles/{tile}` | `col`, `row`, `w`, `h` (tile = key name, `@DPAD`, `@VOL`, `@CH`) | move/resize on the remote grid; 400 if it overlaps |
+| POST | `/api/devices/{id}/tiles/reset` | | default arrangement (grid size via `/api/devices/{id}` `grid_cols`, `grid_rows`) |
+| GET / DELETE | `/api/history` | `limit` (1-200) | last commands: time, device, button, source, ok, message |
+| GET / POST | `/api/scenes` | JSON `{"name":"Movie night","steps":[{"device":"tv","button":"POWER"},{"wait":3000}]}` or form `name` + `steps=tv:POWER, wait:3000` | list / create |
+| GET / POST / DELETE | `/api/scenes/{id}` | same as create | read / edit / delete |
+| GET/POST | `/api/scenes/{id}/run`, `/api/scene?name=` | | run a scene, returns each step's result |
 | GET / POST | `/api/settings` | `authMode`, `username`, `password`, `bindAddress`, `port`, `wakeLock`, `autoStart` | password is never returned |
 | GET | `/api/network`, `/api/network/check` | `address`, `port` | bind options, port availability |
 

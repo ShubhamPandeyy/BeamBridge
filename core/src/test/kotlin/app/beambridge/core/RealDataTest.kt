@@ -56,7 +56,7 @@ class RealDataTest {
         for (m in datasets.ac.manufacturers) for (r in m.remotes) {
             if (!r.supported) { unsupported++; continue }
             for (mode in r.modes) for (t in listOf(r.temperatures.first, r.temperatures.last)) {
-                val s = AcCodec.signal(r, AcState(true, mode, t, "auto"))
+                val s = AcCodec.signal(r, AcState(true, mode, t, r.fanSpeeds.firstOrNull() ?: "auto"))
                 assertTrue(s.pattern.isNotEmpty())
                 ok++
             }
@@ -64,6 +64,13 @@ class RealDataTest {
         }
         println("AC frames built: $ok, unsupported remotes: $unsupported of ${datasets.ac.remoteCount}")
         assertTrue(ok > 500)
+    }
+
+    @Test fun acRejectsUnsupportedValues() {
+        val r = datasets.ac.manufacturers.flatMap { it.remotes }.first { it.supported }
+        assertFailsWith<app.beambridge.core.ir.IrEncodingException> { AcCodec.frame(r, AcState(true, "turbo", 24, r.fanSpeeds.firstOrNull() ?: "auto")) }
+        assertFailsWith<app.beambridge.core.ir.IrEncodingException> { AcCodec.frame(r, AcState(true, r.modes.first(), 99, r.fanSpeeds.firstOrNull() ?: "auto")) }
+        if (r.fanSpeeds.isNotEmpty()) assertFailsWith<app.beambridge.core.ir.IrEncodingException> { AcCodec.frame(r, AcState(true, r.modes.first(), 24, "hurricane")) }
     }
 
     @Test fun lgAcPowerOffIsKnownFrame() {

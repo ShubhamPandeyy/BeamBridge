@@ -1,7 +1,10 @@
 package app.beambridge
 
 import android.app.Application
+import app.beambridge.core.data.CommandHistory
 import app.beambridge.core.data.Datasets
+import app.beambridge.core.data.JsonFileSceneStore
+import app.beambridge.service.SendNotifier
 import app.beambridge.core.data.DeviceStore
 import app.beambridge.core.data.Finder
 import app.beambridge.core.data.JsonFileDeviceStore
@@ -39,17 +42,23 @@ class Graph(private val app: Application) {
             Net.publicHost(Net.resolve(s.bindAddress)?.takeIf { it.isNotEmpty() })?.let { "http://$it:${s.port}" }
         }
     }
-    val controller = BridgeController(store, emitter) { datasets.value }
+    val history = CommandHistory(File(app.filesDir, "history.json"))
+    val scenes = JsonFileSceneStore(File(app.filesDir, "scenes.json"))
+    val controller = BridgeController(store, emitter, history) { datasets.value }
     val pairing = PairingService({ datasets.value }, { stb }, controller)
     val finder = Finder(controller, { datasets.value }, { stb }, scope)
 
     val bridge = Bridge(controller, pairing, finder, settings, endpoints, object : BridgeHooks {
         override fun restartServer() { if (BridgeRuntime.status.value.running) BridgeService.start(app) }
         override fun boundTo(): Pair<String?, Int>? = BridgeRuntime.bound
-    })
+    }, scenes)
+
+    private val notifier by lazy { SendNotifier(app) }
 
     init {
         scope.launch(Dispatchers.IO) { datasets.value = Datasets.load { app.assets.open(it) } }
+        // Silent "Power on beamed to …" confirmation (the finder's rapid-fire sends aren't logged, so no spam).
+        history.listener = { e -> if (settings.settings.value.notifyOnSend) notifier.show(e) }
     }
 }
 

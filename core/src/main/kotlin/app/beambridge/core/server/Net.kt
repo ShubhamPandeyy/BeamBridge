@@ -26,9 +26,9 @@ object Net {
     fun bindOptions(): List<BindOption> =
         listOf(BindOption("auto", "Automatic (Wi-Fi)")) + localAddresses() + BindOption("0.0.0.0", "All interfaces")
 
-    /** Host to pass to the server socket: null = all interfaces. Returns "" when a fixed address is not present now. */
+    /** Host to pass to the server socket: null = all interfaces. Returns "" when the address (or, for "auto", any LAN address) is not present now. */
     fun resolve(bindAddress: String): String? = when (bindAddress) {
-        "auto" -> localIpv4()
+        "auto" -> localIpv4() ?: ""   // no Wi-Fi/LAN yet: wait instead of falling back to every interface
         "0.0.0.0", "" -> null
         else -> if (localAddresses().any { it.address == bindAddress }) bindAddress else ""
     }

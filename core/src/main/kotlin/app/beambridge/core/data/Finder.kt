@@ -104,7 +104,7 @@ class Finder(
     }
 
     fun test(index: Int): SendResult =
-        codes.getOrNull(index)?.let { controller.send(it.code, toggleKey = "finder") } ?: SendResult.NotFound("No code #$index")
+        codes.getOrNull(index)?.let { controller.send(it.code, toggleKey = "finder", label = "Finder test #${index + 1} (${it.label})", source = "finder") } ?: SendResult.NotFound("No code #$index")
 
     /** Save the chosen code as a button on [deviceId]. */
     fun accept(deviceId: String, buttonName: String, index: Int): SavedDevice? {

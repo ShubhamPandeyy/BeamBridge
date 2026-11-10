@@ -46,13 +46,13 @@ fun deviceIcon(type: DeviceType): ImageVector = when (type) {
 /** Icon for well-known button names, or null when the label should be shown instead. */
 fun buttonIcon(name: String): ImageVector? = when (name.uppercase()) {
     "POWER", "POWER_ON", "POWER_OFF", "POWER_TOGGLE" -> Icons.Rounded.PowerSettingsNew
-    "VOL_UP" -> Icons.AutoMirrored.Rounded.VolumeUp
-    "VOL_DOWN" -> Icons.AutoMirrored.Rounded.VolumeDown
-    "VOL_MUTE", "MUTE" -> Icons.AutoMirrored.Rounded.VolumeOff
+    "VOL_UP" -> Icons.Rounded.VolumeUp
+    "VOL_DOWN" -> Icons.Rounded.VolumeDown
+    "VOL_MUTE", "MUTE" -> Icons.Rounded.VolumeOff
     "CH_UP", "UP" -> Icons.Rounded.KeyboardArrowUp
     "CH_DOWN", "DOWN" -> Icons.Rounded.KeyboardArrowDown
-    "LEFT" -> Icons.AutoMirrored.Rounded.KeyboardArrowLeft
-    "RIGHT" -> Icons.AutoMirrored.Rounded.KeyboardArrowRight
+    "LEFT" -> Icons.Rounded.KeyboardArrowLeft
+    "RIGHT" -> Icons.Rounded.KeyboardArrowRight
     "OK", "SELECT" -> Icons.Rounded.RadioButtonChecked
     "BACK" -> Icons.AutoMirrored.Rounded.ArrowBack
     "MENU" -> Icons.Rounded.Menu

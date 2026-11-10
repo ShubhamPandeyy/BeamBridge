@@ -9,6 +9,20 @@ data class IrSignal(val frequency: Int, val pattern: IntArray) {
 
     override fun hashCode(): Int = 31 * frequency + pattern.contentHashCode()
     override fun toString(): String = "IrSignal(${frequency}Hz, ${pattern.size} pulses, ${durationMicros}µs)"
+
+    /**
+     * Pattern safe for every ConsumerIrManager HAL. Qualcomm-based HALs (Xiaomi/Poco/Redmi) silently drop a burst whose
+     * pattern has an odd length (ends on a mark), so we always finish with a trailing space of at least [gap] µs —
+     * the same thing Mi Remote does.
+     */
+    fun forHardware(gap: Int = TRAILING_GAP): IntArray = when {
+        pattern.isEmpty() -> pattern
+        pattern.size % 2 == 1 -> pattern + gap
+        pattern.last() < gap -> pattern.copyOf().also { it[it.lastIndex] = gap }
+        else -> pattern
+    }
+
+    companion object { const val TRAILING_GAP = 10_000 }
 }
 
 /** Anything that can physically emit IR (ConsumerIrManager on Android, a fake in tests). */

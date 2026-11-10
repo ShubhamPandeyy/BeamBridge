@@ -90,27 +90,63 @@ object AcCodec {
     private fun parse(remote: AcRemote, key: String): BigInteger? =
         remote.codes[key]?.let { BigInteger(it.trim().removePrefix("0x").removePrefix("0X"), 16) }
 
-    fun frame(remote: AcRemote, state: AcState, previous: AcState? = null): BigInteger {
-        if (!state.power) parse(remote, "POWER")?.let { return it }
-        if (state.power && previous?.power == false) parse(remote, "POWER_ON")?.let { return it }
-        val mode = parse(remote, AcRemote.MODE_KEYS[state.mode] ?: "bCooling")
-            ?: throw IrEncodingException("This remote has no '${state.mode}' mode")
-        var frame = mode
-        parse(remote, "temp_${state.temperature.coerceIn(remote.temperatures)}")?.let { frame = frame.xor(it) }
-        parse(remote, AcRemote.FAN_KEYS[state.fan] ?: "dSpeedAuto")?.let { frame = frame.xor(it) }
-        return frame
+    /** Null when [state] can be encoded for [remote]; otherwise a message naming the bad value and the valid ones. */
+    fun validate(remote: AcRemote, state: AcState): String? = when {
+        !state.power -> null   // the power-off frame doesn't depend on mode/fan/temperature
+        state.mode !in remote.modes -> "Unsupported mode '${state.mode}'. Use: ${remote.modes.joinToString()}"
+        remote.fanSpeeds.isNotEmpty() && state.fan !in remote.fanSpeeds -> "Unsupported fan '${state.fan}'. Use: ${remote.fanSpeeds.joinToString()}"
+        state.temperature !in remote.temperatures -> "Temperature ${state.temperature} out of range ${remote.temperatures.first}-${remote.temperatures.last}"
+        else -> null
     }
+
+    /** Fixes up a *stored* state (e.g. from an older version) so it only uses values this remote supports. */
+    fun normalize(remote: AcRemote, s: AcState): AcState = s.copy(
+        mode = if (s.mode in remote.modes) s.mode else remote.modes.firstOrNull() ?: s.mode,
+        fan = if (remote.fanSpeeds.isEmpty() || s.fan in remote.fanSpeeds) s.fan else remote.fanSpeeds.first(),
+        temperature = s.temperature.coerceIn(remote.temperatures),
+    )
+
+    fun frame(remote: AcRemote, state: AcState, previous: AcState? = null): BigInteger = frameWithWidth(remote, state, previous).first
+
+    /** Codes that make up the frame for [state] (a full frame, or a base frame + XOR deltas). */
+    private fun parts(remote: AcRemote, state: AcState, previous: AcState?): List<String> {
+        validate(remote, state)?.let { throw IrEncodingException(it) }
+        if (!state.power) remote.codes["POWER"]?.let { return listOf("POWER") }
+        if (state.power && previous?.power == false) remote.codes["POWER_ON"]?.let { return listOf("POWER_ON") }
+        val mode = AcRemote.MODE_KEYS.getValue(state.mode)
+        if (mode !in remote.codes) throw IrEncodingException("This remote has no '${state.mode}' mode")
+        return listOfNotNull(mode, "temp_${state.temperature}".takeIf { it in remote.codes }, AcRemote.FAN_KEYS[state.fan]?.takeIf { it in remote.codes })
+    }
+
+    /**
+     * Frame value and its bit width. Deltas are stored with leading zeros stripped, so they line up from the right
+     * (byte-for-byte the same as XOR-ing fixed-length byte arrays). The width is [AcRemote.bitLength], unless one of
+     * the codes is a whole nibble or more wider (e.g. a separate, longer POWER frame): then that code's own width is
+     * used, so nothing is cut off the front and the frame doesn't shift.
+     */
+    fun frameWithWidth(remote: AcRemote, state: AcState, previous: AcState? = null): Pair<BigInteger, Int> {
+        val keys = parts(remote, state, previous)
+        var value = BigInteger.ZERO
+        var width = remote.bitLength
+        for (k in keys) {
+            val hex = remote.codes.getValue(k).trim().removePrefix("0x").removePrefix("0X")
+            value = value.xor(BigInteger(hex, 16))
+            val w = hex.length * 4
+            if (w - remote.bitLength >= 4) width = maxOf(width, w)
+        }
+        if (width <= 0) width = maxOf(value.bitLength(), 8)
+        return value to width
+    }
+
+    private fun bits(v: BigInteger, n: Int) = BooleanArray(n) { i -> v.testBit(n - 1 - i) }
 
     fun signal(remote: AcRemote, state: AcState, previous: AcState? = null): IrSignal {
         val program = remote.program ?: throw IrEncodingException("Protocol '${remote.protocolTitle}' is not supported yet")
-        val value = frame(remote, state, previous)
-        val n = remote.bitLength
-        return program.render(BooleanArray(n) { i -> value.testBit(n - 1 - i) })
+        val (value, n) = frameWithWidth(remote, state, previous)
+        return program.render(bits(value, n))
     }
 
-    fun hex(remote: AcRemote, state: AcState): String = Bits.toHex(
-        frame(remote, state).let { v -> BooleanArray(remote.bitLength) { i -> v.testBit(remote.bitLength - 1 - i) } },
-    )
+    fun hex(remote: AcRemote, state: AcState): String = frameWithWidth(remote, state).let { (v, n) -> Bits.toHex(bits(v, n)) }
 
     /** Named one-tap actions exposed as buttons (and therefore as copyable URLs) for an AC. */
     fun actions(remote: AcRemote?): List<String> = buildList {

@@ -33,8 +33,11 @@ sealed class IrProtocol(val key: String, val defaultFrequency: Int, val defaultB
         }
     }
 
-    data object Nec : PulseDistance("NEC", 38_000, 32, 9000, 4500, 560, 560, 1690)
-    data object Samsung : PulseDistance("SAMSUNG", 38_000, 32, 4500, 4500, 560, 560, 1690)
+    // NEC-family timings as whole 38 kHz carrier cycles (26.3 µs each), the way Mi Remote builds them:
+    // leader 342/171 cycles, bit mark 21, "0" space 21, "1" space 60 cycles (1579 µs). Receivers decode these the
+    // same as the nominal 560/1690 µs, but some Xiaomi/Qualcomm IR HALs round non-cycle-aligned durations badly.
+    data object Nec : PulseDistance("NEC", 38_000, 32, cyc(342), cyc(171), cyc(21), cyc(21), cyc(60))
+    data object Samsung : PulseDistance("SAMSUNG", 38_000, 32, cyc(171), cyc(171), cyc(21), cyc(21), cyc(60))
     data object Jvc : PulseDistance("JVC", 38_000, 16, 8400, 4200, 526, 524, 1574)
     data object Panasonic : PulseDistance("PANASONIC", 37_000, 48, 3456, 1728, 432, 432, 1296)
     /** RCA (used by TCL): 4 ms / 4 ms leader, 500 µs marks, 1000 µs (0) or 2000 µs (1) spaces, 24 bits MSB first. */
@@ -115,3 +118,6 @@ sealed class IrProtocol(val key: String, val defaultFrequency: Int, val defaultB
         }
     }
 }
+
+/** Duration of [cycles] periods of a 38 kHz carrier, in µs. */
+internal fun cyc(cycles: Int, hz: Int = 38_000): Int = (cycles * 1_000_000L / hz).toInt()

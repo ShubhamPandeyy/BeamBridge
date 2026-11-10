@@ -6,6 +6,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,6 +38,20 @@ fun SettingsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Settings", style = MaterialTheme.typography.headlineSmall)
+
+            Text("Appearance", style = MaterialTheme.typography.titleSmall)
+            ThemePicker(current.theme) { t -> vm.updatePrefs { it.copy(theme = t) } }
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf("auto" to "System", "light" to "Light", "dark" to "Dark").forEachIndexed { i, (mode, label) ->
+                    SegmentedButton(selected = current.darkMode == mode, onClick = { vm.updatePrefs { it.copy(darkMode = mode) } }, shape = SegmentedButtonDefaults.itemShape(i, 3)) { Text(label) }
+                }
+            }
+
+            Text("Remote", style = MaterialTheme.typography.titleSmall)
+            SwitchRow("Phone volume keys control the remote", "Press both together to toggle power", current.volumeKeys) { on -> vm.updatePrefs { it.copy(volumeKeys = on) } }
+            SwitchRow("Notify when a command is sent", "Silent \"Power on beamed to …\" confirmation", current.notifyOnSend) { on -> vm.updatePrefs { it.copy(notifyOnSend = on) } }
+            SwitchRow("Show remote on lock screen", "While a remote is open, it stays usable without unlocking", current.lockScreen) { on -> vm.updatePrefs { it.copy(lockScreen = on) } }
+            HorizontalDivider()
 
             Text("Web UI access", style = MaterialTheme.typography.titleSmall)
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -85,7 +101,7 @@ fun SettingsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Button(
                 onClick = {
-                    error = vm.saveSettings(draft.copy(port = port))
+                    error = vm.saveSettings(draft.copy(port = port, theme = current.theme, darkMode = current.darkMode, volumeKeys = current.volumeKeys, lockScreen = current.lockScreen, notifyOnSend = current.notifyOnSend, onboarded = true))
                     if (error == null) onDismiss()
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -102,4 +118,28 @@ private fun SwitchRow(title: String, sub: String?, checked: Boolean, onChange: (
         trailingContent = { Switch(checked, onChange) },
         colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
     )
+}
+
+/** Colour swatches: "System" (wallpaper colours) plus the M3 presets. */
+@Composable
+private fun ThemePicker(selected: String, onPick: (String) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        val options = listOf(Triple("system", if (dynamicColorAvailable) "System" else "Default", cs.primary)) +
+            PRESETS.map { Triple(it.id, it.label, it.seed) }
+        items(options.size) { i ->
+            val (id, label, color) = options[i]
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Surface(
+                    onClick = { onPick(id) }, shape = androidx.compose.foundation.shape.CircleShape, color = color,
+                    border = if (selected == id) androidx.compose.foundation.BorderStroke(3.dp, cs.onSurface) else null,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    if (selected == id) Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Check, null, tint = androidx.compose.ui.graphics.Color.White) }
+                    else if (id == "system") Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Wallpaper, null, tint = androidx.compose.ui.graphics.Color.White) }
+                }
+                Text(label, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
 }

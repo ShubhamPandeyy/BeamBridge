@@ -26,8 +26,13 @@ interface DeviceStore {
             d.copy(buttons = list)
         }
 
-    fun removeButton(deviceId: String, name: String) =
-        update(deviceId) { d -> d.copy(buttons = d.buttons.filterNot { it.name == name }) }
+    /** Removes a button (name matched case-insensitively). @return false if the device or button doesn't exist. */
+    fun removeButton(deviceId: String, name: String): Boolean {
+        val d = get(deviceId) ?: return false
+        if (d.buttons.none { it.name.equals(name, ignoreCase = true) }) return false
+        update(d.id) { cur -> cur.copy(buttons = cur.buttons.filterNot { it.name.equals(name, ignoreCase = true) }) }
+        return true
+    }
 }
 
 @Serializable
@@ -71,7 +76,7 @@ class JsonFileDeviceStore(private val file: File) : DeviceStore {
     }
 
     @Synchronized
-    override fun remove(id: String) = commit(state.value.filterNot { it.id == id })
+    override fun remove(id: String) { val d = get(id) ?: return; commit(state.value.filterNot { it.id == d.id }) }
 }
 
 /** In-memory store for tests and previews. */
@@ -86,5 +91,5 @@ class InMemoryDeviceStore(initial: List<SavedDevice> = emptyList()) : DeviceStor
         state.value = state.value.map { if (it.id == cur.id) next else it }
         return next
     }
-    @Synchronized override fun remove(id: String) { state.value = state.value.filterNot { it.id == id } }
+    @Synchronized override fun remove(id: String) { val d = get(id) ?: return; state.value = state.value.filterNot { it.id == d.id } }
 }

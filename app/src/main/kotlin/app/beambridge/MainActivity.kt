@@ -3,6 +3,8 @@ package app.beambridge
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -36,7 +38,40 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { BeamBridgeTheme { App(vm) } }
+        setContent {
+            val prefs by vm.settings.collectAsStateWithLifecycle()
+            val route by vm.route.collectAsStateWithLifecycle()
+            // Over the lock screen only while a remote is open and the user turned it on.
+            val showOverLock = prefs.lockScreen && route is Route.Device
+            LaunchedEffect(showOverLock) { setOverLockScreen(showOverLock) }
+            BeamBridgeTheme(prefs.theme, prefs.darkMode) { App(vm) }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun setOverLockScreen(on: Boolean) {
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(on)
+        } else if (on) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+        }
+    }
+
+    /** Phone volume keys drive the open remote (see [MainViewModel.onVolumeKey]). */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val up = when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> true
+            KeyEvent.KEYCODE_VOLUME_DOWN -> false
+            else -> return super.dispatchKeyEvent(event)
+        }
+        val handled = when (event.action) {
+            KeyEvent.ACTION_DOWN -> vm.onVolumeKey(up, pressed = true, repeat = event.repeatCount)
+            KeyEvent.ACTION_UP -> vm.onVolumeKey(up, pressed = false, repeat = 0)
+            else -> false
+        }
+        return handled || super.dispatchKeyEvent(event)
     }
 }
 
@@ -49,9 +84,11 @@ private fun App(vm: MainViewModel) {
     val snackbar = remember { SnackbarHostState() }
     var settingsOpen by remember { mutableStateOf(false) }
 
+    val prefs by vm.settings.collectAsStateWithLifecycle()
     val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= 33) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        // First run asks inside onboarding instead.
+        if (Build.VERSION.SDK_INT >= 33 && vm.settings.value.onboarded) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         if (vm.settings.value.autoStart && !BridgeRuntime.status.value.running) vm.setServerRunning(true)
     }
     // One host for the whole app; a new message replaces the current one instead of queueing behind it.
@@ -64,6 +101,8 @@ private fun App(vm: MainViewModel) {
 
     BackHandler(enabled = route != Route.Hub) { vm.back() }
 
+    if (!prefs.onboarded) { OnboardingScreen(vm); return }
+
     Box(Modifier.fillMaxSize()) {
         AnimatedContent(targetState = route, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "route") { r ->
             when (r) {
@@ -71,6 +110,9 @@ private fun App(vm: MainViewModel) {
                 is Route.Device -> devices.firstOrNull { it.id == r.id }?.let { DeviceScreen(vm, it) } ?: LaunchedEffect(Unit) { vm.home() }
                 is Route.Finder -> devices.firstOrNull { it.id == r.deviceId }?.let { FinderScreen(vm, it) } ?: LaunchedEffect(Unit) { vm.home() }
                 Route.Wizard -> WizardScreen(vm, wizard)
+                Route.History -> HistoryScreen(vm)
+                Route.Scenes -> ScenesScreen(vm)
+                is Route.SceneEdit -> SceneEditorScreen(vm, r.id?.let { id -> vm.scenes.value.firstOrNull { it.id == id } }, devices)
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 88.dp))

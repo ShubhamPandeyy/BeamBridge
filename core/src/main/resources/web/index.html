@@ -6,19 +6,46 @@
 <title>BeamBridge</title>
 <meta name="theme-color" content="#4f46c8">
 <style>
-:root{--bg:#fbf8ff;--s1:#fff;--s2:#efedf6;--s3:#e4e1ee;--on:#1b1b21;--mut:#5e5d6a;--pri:#4f46c8;--onpri:#fff;--ton:#e2dfff;--onton:#1a0f63;
+:root{/* M3 baseline tokens (surface containers, primary/secondary roles) */
+--bg:#fef7ff;--s1:#fff;--s2:#f3edf7;--s3:#e6e0e9;--on:#1d1b20;--mut:#49454f;--pri:#6750a4;--onpri:#fff;--ton:#eaddff;--onton:#21005d;--sec:#e8def8;--onsec:#1d192b;--outl:#79747e;
 --ok:#1f7a47;--err:#ba1a1a;--errc:#ffdad6;--r:28px;--sh:0 1px 3px rgba(0,0,0,.08),0 6px 20px rgba(0,0,0,.05)}
-@media(prefers-color-scheme:dark){:root{--bg:#131318;--s1:#1f1f26;--s2:#2a2a32;--s3:#35343d;--on:#e5e1ec;--mut:#c7c5d3;--pri:#c3c0ff;--onpri:#2a1f8f;--ton:#3f3a8a;--onton:#e2dfff;--ok:#7bd99b;--err:#ffb4ab;--errc:#93000a}}
+@media(prefers-color-scheme:dark){:root{--bg:#141218;--s1:#1d1b20;--s2:#211f26;--s3:#2b2930;--on:#e6e0e9;--mut:#cac4d0;--pri:#d0bcff;--onpri:#381e72;--ton:#4f378b;--onton:#eaddff;--sec:#4a4458;--onsec:#e8def8;--outl:#938f99;--ok:#7bd99b;--err:#ffb4ab;--errc:#93000a}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;font:16px/1.4 system-ui,-apple-system,"Google Sans",Roboto,sans-serif;background:var(--bg);color:var(--on)}
 button,input,select{font:inherit;color:inherit}
-header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:16px 20px;background:var(--bg)}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:calc(12px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) 12px calc(20px + env(safe-area-inset-left));background:var(--bg)}
+#conn{font:12px ui-monospace,monospace;color:var(--mut);display:flex;gap:6px;flex-wrap:wrap;width:100%;order:3}
+#conn span{background:var(--s2);border-radius:8px;padding:3px 8px;cursor:pointer}
+:focus-visible{outline:3px solid var(--pri);outline-offset:2px;border-radius:12px}
+.bar{gap:8px;margin-bottom:12px;flex-wrap:wrap} .mini{display:flex;align-items:center;gap:6px} .mini select{width:auto;padding:8px 10px;border-radius:12px}
+.tip{display:flex;gap:10px;align-items:center;margin:16px auto 0;max-width:440px;background:var(--sec);color:var(--onsec);border-radius:16px;padding:10px 12px;font-size:13px}
+/* free-form remote grid */
+.g{--gap:10px;--cell:calc((min(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right),440px) - (var(--cols) - 1)*var(--gap))/var(--cols));
+ width:min(100%,440px);margin:0 auto;display:grid;grid-template-columns:repeat(var(--cols),1fr);grid-template-rows:repeat(var(--rows),var(--cell));gap:var(--gap);position:relative;touch-action:pan-y}
+.g .tile{position:relative;min-width:0;min-height:0;display:flex;align-items:stretch;justify-content:stretch;z-index:1}
+.g .tile>*{flex:1;width:100%;height:100%}
+.g .cell{border:1.5px dashed var(--s3);border-radius:16px;z-index:0}
+.g .k{width:100%;height:100%}
+.g .k.wide{border-radius:24px}
+.g.edit .tile{animation:wig .28s ease-in-out infinite alternate;cursor:grab;touch-action:none}
+.g.edit .tile>*{pointer-events:none}
+.g.edit .tile.drag{animation:none;z-index:5;cursor:grabbing;filter:drop-shadow(0 8px 16px rgba(0,0,0,.25))}
+.g .rz{position:absolute;right:-4px;bottom:-4px;width:26px;height:26px;border-radius:50%;background:var(--pri);color:var(--onpri);font-size:12px;display:grid;place-items:center;z-index:2;pointer-events:auto!important;cursor:nwse-resize}
+@keyframes wig{from{transform:rotate(-1deg)}to{transform:rotate(1deg)}}
+.k.sending{outline:3px solid var(--outl)} .k.sent,.okb.sent,.d.sent{outline:3px solid var(--pri);outline-offset:2px} .k.fail,.d.fail,.okb.fail{outline:3px solid var(--err)}
+.dpad{position:relative;width:auto!important;height:100%!important;aspect-ratio:1;margin:0 auto;border-radius:50%;background:color-mix(in srgb,var(--ton) 60%,transparent);border:2px solid var(--ton)}
+.dpad .d{position:absolute;width:31%!important;height:31%!important;font-size:clamp(16px,5vw,28px)} .dpad .u{left:34.5%!important;top:2%!important} .dpad .dn{left:34.5%!important;bottom:2%!important;top:auto!important} .dpad .l{left:2%!important;top:34.5%!important} .dpad .r{right:2%!important;left:auto!important;top:34.5%!important}
+.dpad .okb{left:31%!important;top:31%!important;width:38%!important;height:38%!important;background:var(--pri)!important;color:var(--onpri)!important}
+.g .rock{height:100%}
+.search{max-width:440px;margin:0 0 16px}
+pre.code{background:var(--s2);border-radius:12px;padding:12px;overflow:auto;font:12px/1.6 ui-monospace,monospace;white-space:pre-wrap;word-break:break-all;margin:0}
 header h1{font-size:24px;margin:0;flex:1;letter-spacing:-.4px}
 .back{border:0;background:var(--s2);width:44px;height:44px;border-radius:50%;cursor:pointer;font-size:20px}
-main{max-width:1100px;margin:0 auto;padding:4px 16px 110px}
+main{max-width:1100px;margin:0 auto;padding:4px calc(16px + env(safe-area-inset-right)) calc(110px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
+@media(min-width:900px){nav{top:0;bottom:0;right:auto;width:88px;flex-direction:column;justify-content:flex-start;padding-top:88px}nav a{flex:none}body{padding-left:88px}main{padding-bottom:40px}}
 nav{position:fixed;bottom:0;left:0;right:0;z-index:6;display:flex;justify-content:center;gap:4px;padding:10px 8px calc(10px + env(safe-area-inset-bottom));background:var(--s2)}
 nav a{flex:0 1 120px;text-align:center;text-decoration:none;color:var(--mut);font-size:12px;font-weight:600;padding:6px 0;border-radius:20px}
-nav a span{display:block;font-size:20px;margin:0 auto 2px;width:56px;border-radius:16px;padding:2px 0}
+nav a span{display:block;font-size:20px;margin:0 auto 2px;width:min(56px,100%);border-radius:16px;padding:2px 0}
 nav a.on{color:var(--on)} nav a.on span{background:var(--ton)}
 .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
 .card{background:var(--s1);border-radius:var(--r);padding:20px;box-shadow:var(--sh)}
@@ -51,6 +78,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--pri)} label{font-size
 .dpad .okb:active{border-radius:32px}
 .rock{display:flex;height:64px;border-radius:32px;background:var(--s2);overflow:hidden;flex:1}
 .rock button{flex:1;border:0;background:transparent;font-size:24px;cursor:pointer;color:var(--on)} .rock button:active{background:var(--s3)}
+.swipe{position:relative;width:100%;height:100%;margin:0 auto;border-radius:40px;background:var(--s2);touch-action:none;user-select:none;display:flex;align-items:center;justify-content:center;color:var(--mut);font-weight:600;cursor:pointer}
+.swipe span{position:absolute;opacity:.35;font-size:20px} .swipe span.on{opacity:1;color:var(--pri)}
+.trio{display:flex;justify-content:space-between}
 .rock .lbl{align-self:center;font-size:12px;font-weight:700;color:var(--mut);padding:0 4px}
 .extras{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;justify-items:center}
 .extras .cell{width:64px;height:64px;border-radius:50%;border:2px dashed transparent}
@@ -73,13 +103,15 @@ details summary{cursor:pointer;color:var(--mut);font-weight:600;padding:8px 4px}
 </style>
 </head>
 <body>
-<header><button class="back" id="back" hidden>←</button><h1 id="title">BeamBridge</h1><span id="status" class="pill"><i></i><b>…</b></span></header>
+<header><button class="back" id="back" hidden>←</button><h1 id="title">BeamBridge</h1><span id="status" class="pill"><i></i><b>…</b></span><div id="conn" aria-label="Connection"></div></header>
 <main id="view"></main>
 <nav>
   <a href="#/" data-tab="devices"><span>🎛️</span>Devices</a>
+  <a href="#/scenes" data-tab="scenes"><span>✨</span>Scenes</a>
   <a href="#/add" data-tab="add"><span>＋</span>Add</a>
   <a href="#/finder" data-tab="finder"><span>🔎</span>Finder</a>
-  <a href="#/ir" data-tab="ir"><span>⚡</span>Custom IR</a>
+  <a href="#/ir" data-tab="ir"><span>⚡</span>API</a>
+  <a href="#/history" data-tab="history"><span>🕘</span>History</a>
   <a href="#/settings" data-tab="settings"><span>⚙️</span>Settings</a>
 </nav>
 <div id="toast"></div>
@@ -87,14 +119,14 @@ details summary{cursor:pointer;color:var(--mut);font-weight:600;padding:8px 4px}
 "use strict";
 const $=(s,e=document)=>e.querySelector(s);
 const ICON={tv:"📺",ac:"❄️",set_top_box:"📡",other:"🎛️"};
-const KEY={POWER:"⏻",POWER_ON:"⏻",POWER_OFF:"⭘",VOL_UP:"＋",VOL_DOWN:"−",VOL_MUTE:"🔇",CH_UP:"⌃",CH_DOWN:"⌄",UP:"▲",DOWN:"▼",LEFT:"◀",RIGHT:"▶",
+const KEY={OPTIONS:"⚙",POWER:"⏻",POWER_ON:"⏻",POWER_OFF:"⭘",VOL_UP:"＋",VOL_DOWN:"−",VOL_MUTE:"🔇",CH_UP:"⌃",CH_DOWN:"⌄",UP:"▲",DOWN:"▼",LEFT:"◀",RIGHT:"▶",
  OK:"OK",SELECT:"OK",BACK:"↩",EXIT:"✕",HOME:"⌂",TCL_HOME:"⌂",MENU:"☰",INFO:"ⓘ",SOURCE:"⇥",PLAY:"▶",PAUSE:"⏸",STOP:"■",REWIND:"⏪",FAST_FORWARD:"⏩",
  NEXT:"⏭",PREVIOUS:"⏮",RECORD:"⏺",GUIDE:"▤",SETTINGS:"⚙",RED:"🔴",GREEN:"🟢",YELLOW:"🟡",BLUE:"🔵",NETFLIX:"N",YOUTUBE:"▶︎",TEMP_UP:"＋",TEMP_DOWN:"−"};
 const pretty=n=>n.replace(/_/g," ").toLowerCase().replace(/^./,c=>c.toUpperCase());
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let toastT;function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),1800)}
 async function api(path,opts={}){
-  const o={...opts};if(o.body&&typeof o.body==="object"){o.body=JSON.stringify(o.body);o.headers={"Content-Type":"application/json"}}
+  const o={...opts};o.headers={"X-BeamBridge-Client":"web",...(o.headers||{})};if(o.body&&typeof o.body==="object"){o.body=JSON.stringify(o.body);o.headers["Content-Type"]="application/json"}
   const r=await fetch(path,o);const j=await r.json().catch(()=>({status:"error",error:r.statusText}));
   if(!r.ok||j.status==="error")throw new Error(j.error||r.statusText);return j}
 const post=(p,b)=>api(p,{method:"POST",body:b||{}});
@@ -104,32 +136,83 @@ function sheet(title,url,items){
   const s=h(`<div class="scrim"><div class="sheet"><h3>${esc(title)}</h3>${url?`<div class="url">${esc(url)}</div>`:""}</div></div>`);
   items.forEach(([ic,label,fn])=>{const it=h(`<div class="item"><span>${ic}</span><span>${esc(label)}</span></div>`);it.onclick=()=>{s.remove();fn()};$(".sheet",s).append(it)});
   s.onclick=e=>{if(e.target===s)s.remove()};document.body.append(s)}
-function longPress(el,onTap,onLong){let t,long=false;
-  const start=()=>{long=false;t=setTimeout(()=>{long=true;navigator.vibrate?.(15);onLong()},480)};const end=()=>clearTimeout(t);
+function longPress(el,onTap,onLong,selfOnly=false){let t,long=false;
+  const start=e=>{if(selfOnly&&e.target!==el)return;long=false;t=setTimeout(()=>{long=true;navigator.vibrate?.(15);onLong()},480)};const end=()=>clearTimeout(t);
   el.addEventListener("pointerdown",start);el.addEventListener("pointerup",end);el.addEventListener("pointerleave",end);el.addEventListener("pointercancel",end);
-  el.addEventListener("contextmenu",e=>{e.preventDefault();end();if(!long)onLong();long=true});
+  el.addEventListener("contextmenu",e=>{if(selfOnly&&e.target!==el)return;e.preventDefault();end();if(!long)onLong();long=true});
   el.addEventListener("click",e=>{if(long){e.preventDefault();return}onTap()})}
 
 let devices=[];let current=null;
-async function refreshStatus(){try{const s=await api("/api/status");$("#status").className="pill"+(s.ir_emitter?"":" bad");$("#status b").textContent=s.ir_emitter?"Online":"No IR emitter"}catch{$("#status").className="pill bad";$("#status b").textContent="Offline"}}
+async function refreshStatus(){try{const s=await api("/api/status");$("#status").className="pill"+(s.ir_emitter?"":" bad");$("#status b").textContent=s.ir_emitter?"Online":"No IR emitter";
+  const u=new URL(s.base_url||location.origin);$("#conn").replaceChildren(...[["IP",u.hostname],["Port",u.port||"80"],["Auth",s.auth==="password"?"🔒 password":"guest"],["Devices",s.devices]].map(([k,v])=>{const e=h(`<span title="Copy">${k} ${esc(v)}</span>`);e.onclick=()=>copy(String(v));return e}))}catch{$("#status").className="pill bad";$("#status b").textContent="Offline"}}
 async function loadDevices(){devices=await api("/api/devices");return devices}
-function press(id,btn,el){el?.animate([{filter:"brightness(1.4)"},{filter:"none"}],{duration:350});api(`/api/blast?device=${encodeURIComponent(id)}&button=${encodeURIComponent(btn)}`,{method:"POST"}).catch(e=>toast(e.message))}
+function press(id,btn,el){navigator.vibrate?.(8);el?.classList.add("sending");const fb=$("#fb");if(fb)fb.textContent=`Sending ${pretty(btn)}…`;
+  api(`/api/blast?device=${encodeURIComponent(id)}&button=${encodeURIComponent(btn)}`,{method:"POST"})
+   .then(()=>{el?.classList.add("sent");if(fb)fb.textContent=`✓ ${pretty(btn)} sent`},e=>{el?.classList.add("fail");if(fb)fb.textContent=`✕ ${e.message}`;toast(e.message)})
+   .finally(()=>{el?.classList.remove("sending");setTimeout(()=>el?.classList.remove("sent","fail"),600)})}
 
 /* ---------------- routes ---------------- */
-const routes={"":viewDevices,"device":viewDevice,"add":viewAdd,"finder":viewFinder,"ir":viewIr,"settings":viewSettings};
+const routes={"scenes":viewScenes,"scene":viewSceneEdit,"history":viewHistory,"":viewDevices,"device":viewDevice,"add":viewAdd,"finder":viewFinder,"ir":viewIr,"settings":viewSettings};
 async function render(){
-  const [,name="",arg]=location.hash.replace(/^#/,"").split("/");const v=$("#view");v.replaceChildren();
-  document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("on",a.dataset.tab===(name===""||name==="device"?"devices":name)));
+  const [,name="",arg]=location.hash.replace(/^#/,"").split("/");const v=$("#view");v.replaceChildren();document.onkeydown=null;if(name!=="device")editing=false;
+  document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("on",a.dataset.tab===(name===""||name==="device"?"devices":name==="scene"?"scenes":name)));
   $("#back").hidden=name!=="device";$("#back").onclick=()=>location.hash="#/";
   try{await (routes[name]||viewDevices)(v,arg&&decodeURIComponent(arg))}catch(e){v.append(h(`<div class="empty">${esc(e.message)}</div>`))}}
 window.addEventListener("hashchange",render);
+
+/* ---------------- history ---------------- */
+async function viewHistory(v){
+  $("#title").textContent="History";const list=await api("/api/history?limit=20");
+  const top=h(`<div class="row" style="justify-content:space-between;margin-bottom:12px"><span class="t2">Last ${list.length} commands from the app, web, API and scenes</span><button class="btn out" id="clr">Clear</button></div>`);
+  $("#clr",top).onclick=async()=>{if(confirm("Clear history?")){await api("/api/history",{method:"DELETE"});render()}};v.append(top);
+  if(!list.length){v.append(h(`<div class="empty">Nothing sent yet</div>`));return}
+  const c=h(`<section class="card col"></section>`);
+  list.forEach(e=>c.append(h(`<div class="row" style="gap:12px;padding:6px 0"><span class="pill ${e.ok?"":"bad"}"><i></i>${e.ok?"Sent":"Failed"}</span><div class="sp"><div class="t1">${esc(pretty(e.button))}${e.device_name||e.device?` → ${esc(e.device_name||e.device)}`:""}</div><div class="t2">${new Date(e.time).toLocaleString()} · ${esc(e.source)}${e.message?` · ${esc(e.message)}`:""}</div></div></div>`)));
+  v.append(c)}
+
+/* ---------------- scenes ---------------- */
+async function viewScenes(v){
+  $("#title").textContent="Scenes";const list=await api("/api/scenes");
+  const top=h(`<div class="row" style="justify-content:flex-end;margin-bottom:12px"><a class="btn" href="#/scene/new" style="text-decoration:none">＋ New scene</a></div>`);v.append(top);
+  if(!list.length){v.append(h(`<div class="empty">A scene sends several commands in one go, e.g. TV power → wait 3 s → HDMI 1 → AC on.</div>`));return}
+  const g=h(`<div class="col" style="gap:12px"></div>`);
+  list.forEach(sc=>{const c=h(`<section class="card row" style="gap:12px"><div class="badge">✨</div><div class="sp"><div class="t1">${esc(sc.name)}</div><div class="t2">${sc.steps.length} steps</div></div><button class="btn out cp" title="Copy URL">🔗</button><button class="btn out ed">Edit</button><button class="btn run">▶ Run</button></section>`);
+    $(".cp",c).onclick=()=>copy(sc.url);$(".ed",c).onclick=()=>location.hash=`#/scene/${enc(sc.id)}`;
+    $(".run",c).onclick=async e=>{const b=e.currentTarget;b.disabled=true;b.textContent="Running…";try{const r=await post(`/api/scenes/${enc(sc.id)}/run`);toast(r.failed?`${r.failed} step(s) failed`:`${sc.name} done`)}catch(err){toast(err.message)}b.disabled=false;b.textContent="▶ Run"};
+    g.append(c)});v.append(g)}
+
+async function viewSceneEdit(v,id){
+  await loadDevices();const isNew=!id||id==="new";const sc=isNew?{name:"",steps:[]}:await api(`/api/scenes/${enc(id)}`);
+  $("#title").textContent=isNew?"New scene":"Edit scene";$("#back").hidden=false;$("#back").onclick=()=>location.hash="#/scenes";
+  const steps=sc.steps.map(s=>({...s}));const act=devices.filter(d=>!d.archived);
+  const c=h(`<section class="card col" style="gap:12px"><label>Name<input id="nm" value="${esc(sc.name)}" placeholder="Movie night"></label><div id="st" class="col" style="gap:8px"></div>
+    <div class="row" style="gap:8px"><button class="btn ton" id="addk">＋ Key press</button><button class="btn out" id="addw">⏱ Wait</button></div>
+    <div class="row" style="gap:8px;justify-content:flex-end">${isNew?"":`<button class="btn out" id="del">Delete</button>`}<button class="btn" id="save">Save</button></div></section>`);
+  const draw=()=>{const box=$("#st",c);box.replaceChildren();steps.forEach((s,i)=>{
+    const row=h(`<div class="row" style="gap:8px"><b style="width:20px">${i+1}</b></div>`);
+    if(s.wait!=null){const inp=h(`<input type="number" min="1" max="60000" value="${s.wait}" style="flex:1" aria-label="Wait milliseconds">`);inp.oninput=()=>s.wait=parseInt(inp.value,10);row.append(h(`<span>Wait</span>`),inp,h(`<span>ms</span>`))}
+    else{const ds=h(`<select style="flex:1" aria-label="Device">${act.map(d=>`<option value="${esc(d.id)}" ${d.id===s.device?"selected":""}>${esc(d.name)}</option>`).join("")}</select>`);
+      const bs=h(`<select style="flex:1" aria-label="Key"></select>`);const fill=()=>{const d=act.find(x=>x.id===ds.value);bs.innerHTML=(d?.buttons||[]).map(b=>`<option ${b.name.toUpperCase()===String(s.button).toUpperCase()?"selected":""}>${esc(b.name)}</option>`).join("");s.device=ds.value;s.button=bs.value};
+      ds.onchange=()=>{s.button="";fill()};bs.onchange=()=>s.button=bs.value;fill();row.append(ds,bs)}
+    const up=h(`<button class="btn out" aria-label="Move up">↑</button>`),rm=h(`<button class="btn out" aria-label="Remove">✕</button>`);
+    up.disabled=i===0;up.onclick=()=>{[steps[i-1],steps[i]]=[steps[i],steps[i-1]];draw()};rm.onclick=()=>{steps.splice(i,1);draw()};row.append(up,rm);box.append(row)})};
+  $("#addk",c).onclick=()=>{if(!act.length)return toast("Add a device first");steps.push({device:act[0].id,button:""});draw()};
+  $("#addw",c).onclick=()=>{steps.push({wait:1000});draw()};
+  $("#save",c).onclick=async()=>{try{const body={name:$("#nm",c).value,steps:steps.map(s=>s.wait!=null?{wait:s.wait}:{device:s.device,button:s.button})};
+    await api(isNew?"/api/scenes":`/api/scenes/${enc(id)}`,{method:"POST",body});toast("Saved");location.hash="#/scenes"}catch(e){toast(e.message)}};
+  $("#del",c)&&($("#del",c).onclick=async()=>{if(confirm("Delete scene?")){await api(`/api/scenes/${enc(id)}`,{method:"DELETE"});location.hash="#/scenes"}});
+  draw();v.append(c)}
 
 /* ---------------- devices ---------------- */
 async function viewDevices(v){
   $("#title").textContent="BeamBridge";await loadDevices();
   const active=devices.filter(d=>!d.archived),arch=devices.filter(d=>d.archived);
   if(!devices.length){v.append(h(`<div class="empty"><div style="font-size:56px">🎛️</div><p><a class="btn" href="#/add" style="text-decoration:none">Add device</a></p></div>`));return}
-  const g=h(`<div class="grid"></div>`);active.forEach(d=>g.append(deviceCard(d)));v.append(g);
+  const q=h(`<input class="search" type="search" placeholder="Search devices, brands or keys" aria-label="Search devices">`);v.append(q);
+  const g=h(`<div class="grid"></div>`);const draw=()=>{const t=q.value.trim().toLowerCase();g.replaceChildren();
+    const list=active.filter(d=>!t||[d.name,d.brand,d.type,...d.buttons.map(b=>b.name)].some(x=>String(x||"").toLowerCase().includes(t)));
+    list.forEach(d=>g.append(deviceCard(d)));if(!list.length)g.append(h(`<div class="empty">No device matches “${esc(q.value)}”</div>`))};
+  q.oninput=draw;draw();v.append(g);
   if(arch.length){const det=h(`<details style="margin-top:20px"><summary>Archived (${arch.length})</summary><div class="grid"></div></details>`);arch.forEach(d=>$(".grid",det).append(deviceCard(d)));v.append(det)}}
 function deviceCard(d){
   const quick=(d.type==="ac"?["POWER_ON","POWER_OFF","TEMP_DOWN","TEMP_UP"]:["POWER","VOL_DOWN","VOL_UP","VOL_MUTE"]).filter(n=>d.buttons.some(b=>b.name===n&&!b.hidden));
@@ -143,39 +226,96 @@ function deviceMenu(d){sheet(d.name,d.endpoint,[
   ["🗑️","Delete",async()=>{if(confirm(`Delete ${d.name}?`)){await api(`/api/devices/${enc(d.id)}`,{method:"DELETE"});location.hash="#/";render()}}]])}
 const enc=encodeURIComponent;
 
+let editing=false;
 async function viewDevice(v,id){
-  await loadDevices();const d=devices.find(x=>x.id===id);if(!d)throw new Error("Device not found");current=d;
-  $("#title").textContent=d.name;
-  const top=h(`<div class="row" style="justify-content:flex-end;gap:8px;margin-bottom:12px"><button class="btn ton" id="addb">＋ Button</button><button class="btn out" id="more">⋯</button></div>`);
-  $("#addb",top).onclick=()=>buttonEditor(d);$("#more",top).onclick=()=>{
-    const hid=d.buttons.filter(b=>b.hidden);sheet(d.name,d.endpoint,[["🔎","Find a button with the finder",()=>location.hash=`#/finder/${enc(d.id)}`],
-      ...(hid.length?[["👁️",`Show hidden (${hid.length})`,async()=>{for(const b of hid)await post(`/api/devices/${enc(d.id)}/buttons/${enc(b.name)}`,{hidden:false});render()}]]:[]),
-      ["✏️","Rename",async()=>{const n=prompt("Name",d.name);if(n){await post(`/api/devices/${enc(d.id)}`,{name:n});render()}}],
-      [d.archived?"📤":"📥",d.archived?"Unarchive":"Archive",async()=>{await post(`/api/devices/${enc(d.id)}`,{archived:!d.archived});render()}],
-      ["🗑️","Delete device",async()=>{if(confirm(`Delete ${d.name}?`)){await api(`/api/devices/${enc(d.id)}`,{method:"DELETE"});location.hash="#/"}}]])};
-  v.append(top);const r=h(`<div class="remote"></div>`);v.append(r);
-  if(d.ac_state)r.append(acPanel(d));
-  const L=d.layout,B=Object.fromEntries(d.buttons.map(b=>[b.name,b]));
-  const key=(n,cls="")=>{if(!n)return h(`<span style="width:64px"></span>`);const el=h(`<button class="k ${cls}" title="${esc(n)}">${KEY[n]?KEY[n]:`<small>${esc(pretty(n).slice(0,6))}</small>`}</button>`);
+  await loadDevices();const d=devices.find(x=>x.id.toLowerCase()===String(id).toLowerCase());if(!d)throw new Error("Device not found");current=d;
+  $("#title").textContent=editing?"Edit layout":d.name;const L=d.layout,B=Object.fromEntries(d.buttons.map(b=>[b.name,b]));
+  const top=h(editing
+    ?`<div class="row bar"><span class="t2 sp">Drag keys to move · drag ◢ to resize · arrows / shift+arrows on a focused key</span>
+       <label class="mini">Cols <select id="gc">${[3,4,5,6].map(n=>`<option ${n===d.grid.cols?"selected":""}>${n}</option>`).join("")}</select></label>
+       <label class="mini">Rows <select id="gr">${Array.from({length:13},(_,i)=>i+4).map(n=>`<option ${n===d.grid.rows?"selected":""}>${n}</option>`).join("")}</select></label>
+       <button class="btn out" id="rst">Reset</button><button class="btn" id="done">Done</button></div>`
+    :`<div class="row bar"><span id="fb" class="t2 sp" aria-live="polite"></span><button class="btn ton" id="addb">＋ Button</button><button class="btn out" id="more" aria-label="More">⋯</button></div>`);
+  v.append(top);
+  if(editing){
+    $("#done",top).onclick=()=>{editing=false;render()};
+    $("#rst",top).onclick=async()=>{await post(`/api/devices/${enc(d.id)}/tiles/reset`);render()};
+    $("#gc",top).onchange=async e=>{if(confirm("Changing columns resets the arrangement. Continue?")){await post(`/api/devices/${enc(d.id)}`,{grid_cols:+e.target.value})}render()};
+    $("#gr",top).onchange=async e=>{try{await post(`/api/devices/${enc(d.id)}`,{grid_rows:+e.target.value})}catch(err){toast(err.message)}render()};
+  }else{
+    $("#addb",top).onclick=()=>buttonEditor(d);$("#more",top).onclick=()=>{
+      const hid=d.buttons.filter(b=>b.hidden),av=L.available||[];sheet(d.name,d.endpoint,[
+        ["🧩","Edit layout (move / resize keys)",()=>{editing=true;render()}],
+        ...(av.length?[["➕",`Add keys to screen (${av.length})`,()=>addKeys(d)]]:[]),
+        ...((L.up||L.ok)?[["👆",`Swipe D-pad: ${d.swipe?"on":"off"}`,async()=>{await post(`/api/devices/${enc(d.id)}`,{swipe:!d.swipe});render()}]]:[]),
+        ["🔎","Find a button with the finder",()=>location.hash=`#/finder/${enc(d.id)}`],
+        ...(hid.length?[["👁️",`Show hidden (${hid.length})`,async()=>{for(const b of hid)await post(`/api/devices/${enc(d.id)}/buttons/${enc(b.name)}`,{hidden:false});render()}]]:[]),
+        ["✏️","Rename",async()=>{const n=prompt("Name",d.name);if(n){await post(`/api/devices/${enc(d.id)}`,{name:n});render()}}],
+        [d.archived?"📤":"📥",d.archived?"Unarchive":"Archive",async()=>{await post(`/api/devices/${enc(d.id)}`,{archived:!d.archived});render()}],
+        ["🗑️","Delete device",async()=>{if(confirm(`Delete ${d.name}?`)){await api(`/api/devices/${enc(d.id)}`,{method:"DELETE"});location.hash="#/"}}]])};
+  }
+  if(d.ac_state&&!editing)v.append(acPanel(d));
+  if(!editing&&!localStorage.bbTip)v.append(Object.assign(h(`<div class="tip" role="note">💡 Long-press a key for its URL, favourites and layout editing. Long-press empty space to rearrange. Keyboard: arrows, Enter = OK, Backspace = back, +/− = volume.<button class="chip" aria-label="Dismiss tip">✕</button></div>`),{onclick(e){if(e.target.tagName==="BUTTON"){localStorage.bbTip=1;this.remove()}}}));
+  v.append(gridRemote(d,L,B));
+  // keyboard control of the open remote
+  document.onkeydown=e=>{if(editing||/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)||e.metaKey||e.ctrlKey||e.altKey)return;
+    const k={ArrowUp:L.up,ArrowDown:L.down,ArrowLeft:L.left,ArrowRight:L.right,Enter:L.ok,Backspace:L.back,"+":L.vol_up,"=":L.vol_up,"-":L.vol_down,m:L.mute,p:L.power,h:L.home}[e.key];
+    if(k&&!(e.key==="Enter"&&document.activeElement?.tagName==="BUTTON")){e.preventDefault();press(d.id,k)}};
+}
+function tileEl(d,t,L,B){
+  const k=n=>{if(!n)return h(`<span></span>`);const el=h(`<button class="k" title="${esc(pretty(n))}" aria-label="${esc(pretty(n))}">${KEY[n]?KEY[n]:`<small>${esc(pretty(n).slice(0,8))}</small>`}</button>`);
     longPress(el,()=>press(d.id,n,el),()=>buttonMenu(d,B[n]||{name:n}));return el};
-  if(L.mute||L.power){const p=h(`<div class="pair"></div>`);p.append(key(L.mute),key(L.power,"pw"));r.append(p)}
-  if(L.up||L.down||L.left||L.right||L.ok){const dp=h(`<div class="dpad"></div>`);
-    [["up","u","▲"],["down","dn","▼"],["left","l","◀"],["right","r","▶"]].forEach(([k,c,ic])=>{if(!L[k])return;const b=h(`<button class="d ${c}">${ic}</button>`);longPress(b,()=>press(d.id,L[k],b),()=>buttonMenu(d,B[L[k]]||{name:L[k]}));dp.append(b)});
-    if(L.ok){const b=h(`<button class="okb">OK</button>`);longPress(b,()=>press(d.id,L.ok,b),()=>buttonMenu(d,B[L.ok]||{name:L.ok}));dp.append(b)}r.append(dp)}
-  const rock=(a,b,label)=>{const x=h(`<div class="rock"><button>−</button><span class="lbl">${label}</span><button>＋</button></div>`);const [m,p]=x.querySelectorAll("button");
-    if(a)longPress(m,()=>press(d.id,a,m),()=>buttonMenu(d,B[a]||{name:a}));else m.disabled=true;if(b)longPress(p,()=>press(d.id,b,p),()=>buttonMenu(d,B[b]||{name:b}));else p.disabled=true;return x};
-  if(L.vol_down||L.vol_up||L.ch_down||L.ch_up){const row=h(`<div class="row"></div>`);if(L.vol_down||L.vol_up)row.append(rock(L.vol_down,L.vol_up,"VOL"));if(L.ch_down||L.ch_up)row.append(rock(L.ch_down,L.ch_up,"CH"));r.append(row)}
-  if(L.home||L.back){const p=h(`<div class="pair"></div>`);p.append(key(L.home),key(L.back));r.append(p)}
-  if(L.extras.length){const g=h(`<div class="extras"></div>`);L.extras.forEach((n,i)=>{let cell;if(n){cell=key(n,B[n]?.hidden?"hid":"");cell.draggable=true;cell.ondragstart=e=>e.dataTransfer.setData("text",n)}else cell=h(`<div class="cell"></div>`);
-    cell.ondragover=e=>{e.preventDefault();cell.classList.add("drop")};cell.ondragleave=()=>cell.classList.remove("drop");
-    cell.ondrop=async e=>{e.preventDefault();const from=e.dataTransfer.getData("text");if(from&&from!==n){await post(`/api/devices/${enc(d.id)}/buttons/${enc(from)}`,{cell:i});render()}};g.append(cell)});
-    for(let i=L.extras.length;i<Math.ceil((L.extras.length+1)/4)*4;i++){const c=h(`<div class="cell"></div>`);c.ondragover=e=>{e.preventDefault();c.classList.add("drop")};c.ondragleave=()=>c.classList.remove("drop");c.ondrop=async e=>{e.preventDefault();const f=e.dataTransfer.getData("text");if(f){await post(`/api/devices/${enc(d.id)}/buttons/${enc(f)}`,{cell:i});render()}};g.append(c)}
-    r.append(g)}
-  if(!r.children.length)r.append(h(`<div class="empty">No buttons yet</div>`))}
+  if(t.id==="@DPAD"){
+    if(d.swipe)return swipePad(d,L);
+    const dp=h(`<div class="dpad" role="group" aria-label="D-pad"></div>`);
+    [["up","u","▲"],["down","dn","▼"],["left","l","◀"],["right","r","▶"]].forEach(([key,c,ic])=>{if(!L[key])return;const b=h(`<button class="d ${c}" aria-label="${key}">${ic}</button>`);longPress(b,()=>press(d.id,L[key],b),()=>buttonMenu(d,B[L[key]]||{name:L[key]}));dp.append(b)});
+    if(L.ok){const b=h(`<button class="okb">OK</button>`);longPress(b,()=>press(d.id,L.ok,b),()=>buttonMenu(d,B[L.ok]||{name:L.ok}));dp.append(b)}return dp}
+  if(t.id==="@VOL"||t.id==="@CH"){const [a,b]=t.id==="@VOL"?[L.vol_down,L.vol_up]:[L.ch_down,L.ch_up];
+    const x=h(`<div class="rock" role="group" aria-label="${t.id==="@VOL"?"Volume":"Channel"}"><button aria-label="${t.id==="@VOL"?"Volume down":"Channel down"}">−</button><span class="lbl">${t.id==="@VOL"?"VOLUME":"CHANNEL"}</span><button aria-label="${t.id==="@VOL"?"Volume up":"Channel up"}">＋</button></div>`);const [m,p]=x.querySelectorAll("button");
+    if(a)longPress(m,()=>press(d.id,a,m),()=>buttonMenu(d,B[a]||{name:a}));else m.disabled=true;if(b)longPress(p,()=>press(d.id,b,p),()=>buttonMenu(d,B[b]||{name:b}));else p.disabled=true;return x}
+  const el=k(t.id);if(/^POWER/.test(t.id))el.classList.add("pw");if(t.w!==t.h)el.classList.add("wide");
+  if(t.w>1)el.innerHTML=`${KEY[t.id]?KEY[t.id]+" ":""}<small>${esc(pretty(t.id))}</small>`;return el}
+function gridRemote(d,L,B){
+  const G=d.grid,wrap=h(`<div class="g${editing?" edit":""}" style="--cols:${G.cols};--rows:${G.rows}"></div>`);
+  if(editing)for(let i=0;i<G.cols*G.rows;i++)wrap.append(h(`<div class="cell" style="grid-column:${i%G.cols+1};grid-row:${Math.floor(i/G.cols)+1}"></div>`));
+  else longPress(wrap,()=>{},()=>{editing=true;render()},true);
+  G.tiles.forEach(t=>{const box=h(`<div class="tile" style="grid-column:${t.col+1} / span ${t.w};grid-row:${t.row+1} / span ${t.h}"></div>`);box.append(tileEl(d,t,L,B));
+    if(editing){box.tabIndex=0;box.setAttribute("aria-label",`${pretty(t.id.replace("@",""))}, column ${t.col+1}, row ${t.row+1}, ${t.w} by ${t.h}`);
+      box.append(h(`<span class="rz" aria-hidden="true">◢</span>`));editTile(d,wrap,box,t)}
+    wrap.append(box)});
+  return wrap}
+function editTile(d,wrap,box,t){
+  const save=async(c,r,w,hh)=>{try{await post(`/api/devices/${enc(d.id)}/tiles/${enc(t.id)}`,{col:c,row:r,w,h:hh})}catch(e){toast(e.message)}render()};
+  const cell=()=>{const gap=10;return (wrap.clientWidth+gap)/d.grid.cols};
+  let sx,sy,mode=null;
+  box.onpointerdown=e=>{mode=e.target.classList.contains("rz")?"size":"move";sx=e.clientX;sy=e.clientY;box.setPointerCapture(e.pointerId);box.classList.add("drag");e.preventDefault()};
+  box.onpointermove=e=>{if(!mode)return;const dx=e.clientX-sx,dy=e.clientY-sy;
+    if(mode==="move")box.style.transform=`translate(${dx}px,${dy}px) scale(1.04)`;
+    else{const cw=cell();box.style.gridColumnEnd=`span ${Math.max(1,t.w+Math.round(dx/cw))}`;box.style.gridRowEnd=`span ${Math.max(1,t.h+Math.round(dy/cw))}`}};
+  box.onpointerup=e=>{if(!mode)return;const cw=cell(),dc=Math.round((e.clientX-sx)/cw),dr=Math.round((e.clientY-sy)/cw),m=mode;mode=null;box.classList.remove("drag");box.style.transform="";
+    if(m==="move"&&(dc||dr))save(t.col+dc,t.row+dr,t.w,t.h);else if(m==="size"&&(dc||dr))save(t.col,t.row,t.w+dc,t.h+dr)};
+  box.onpointercancel=()=>{mode=null;box.style.transform="";box.classList.remove("drag")};
+  box.onkeydown=e=>{const dir={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(!dir)return;e.preventDefault();
+    if(e.shiftKey)save(t.col,t.row,t.w+dir[0],t.h+dir[1]);else save(t.col+dir[0],t.row+dir[1],t.w,t.h)};
+}
+function addKeys(d){sheet("Add keys to screen","",(d.layout.available||[]).map(n=>[KEY[n]||"＋",pretty(n),async()=>{await post(`/api/devices/${enc(d.id)}/buttons/${enc(n)}`,{onscreen:true});render()}]))}
+function swipePad(d,L){
+  const el=h(`<div class="swipe" title="Swipe for arrows, tap for OK"><span style="top:10px">▲</span><span style="bottom:10px">▼</span><span style="left:14px">◀</span><span style="right:14px">▶</span>Swipe · tap for OK</div>`);
+  const [u,dn,l,r]=el.querySelectorAll("span"),arrow={[L.up]:u,[L.down]:dn,[L.left]:l,[L.right]:r};
+  const send=n=>{if(!n)return;press(d.id,n,el);const a=arrow[n];if(a){a.classList.add("on");setTimeout(()=>a.classList.remove("on"),180)}};
+  let sx,sy,moved=false;const STEP=48;
+  el.onpointerdown=e=>{sx=e.clientX;sy=e.clientY;moved=false;el.setPointerCapture(e.pointerId)};
+  el.onpointermove=e=>{if(sx==null)return;const dx=e.clientX-sx,dy=e.clientY-sy;if(Math.abs(dx)>=STEP||Math.abs(dy)>=STEP){moved=true;send(Math.abs(dx)>Math.abs(dy)?(dx>0?L.right:L.left):(dy>0?L.down:L.up));sx=e.clientX;sy=e.clientY}};
+  el.onpointerup=()=>{if(sx!=null&&!moved)send(L.ok);sx=null};el.onpointercancel=()=>{sx=null};
+  return el}
 function buttonMenu(d,b){
-  const url=d.buttons.find(x=>x.name===b.name)?.url||"";const items=[["📋","Copy URL Endpoint",()=>copy(url)],["⚡","Send now",()=>press(d.id,b.name)]];
-  if(!/^(POWER_ON|POWER_OFF|TEMP_UP|TEMP_DOWN|MODE_|FAN_)/.test(b.name)||d.type!=="ac")items.push([b.hidden?"👁️":"🙈",b.hidden?"Show":"Hide",async()=>{await post(`/api/devices/${enc(d.id)}/buttons/${enc(b.name)}`,{hidden:!b.hidden});render()}]);
-  const extras=d.layout.extras;if(extras.includes(b.name))items.push(["↔️","Move",async()=>{const c=prompt(`Move to cell (1-${Math.max(extras.length+1,4)})`,String(extras.indexOf(b.name)+1));if(c){await post(`/api/devices/${enc(d.id)}/buttons/${enc(b.name)}`,{cell:Math.max(0,parseInt(c,10)-1)});render()}}]);
+  const url=d.buttons.find(x=>x.name===b.name)?.url||"";const fav=(d.favorites||[]).some(f=>f.toUpperCase()===b.name.toUpperCase());
+  const items=[["📋","Copy URL Endpoint",()=>copy(url)],["⚡","Send now",()=>press(d.id,b.name)],
+    [fav?"★":"☆",fav?"Remove from favourites":"Add to favourites",async()=>{await post(`/api/devices/${enc(d.id)}/buttons/${enc(b.name)}`,{favorite:!fav});render()}],
+    ["🧩","Move / resize (edit layout)",()=>{editing=true;render()}]];
+  const full=d.buttons.find(x=>x.name===b.name)||b;
+  if(full.on_screen)items.push(["➖","Remove from screen",async()=>{await post(`/api/devices/${enc(d.id)}/buttons/${enc(b.name)}`,{onscreen:false});render()}]);
+  else if(!/^(POWER_ON|POWER_OFF|TEMP_UP|TEMP_DOWN|MODE_|FAN_)/.test(b.name)||d.type!=="ac")items.push([b.hidden?"👁️":"🙈",b.hidden?"Show":"Hide",async()=>{await post(`/api/devices/${enc(d.id)}/buttons/${enc(b.name)}`,{hidden:!b.hidden});render()}]);
   if(b.custom){items.push(["✏️","Edit code",()=>buttonEditor(d,b)]);items.push(["🗑️","Remove",async()=>{await api(`/api/devices/${enc(d.id)}/buttons/${enc(b.name)}`,{method:"DELETE"});render()}])}
   sheet(pretty(b.name),url,items)}
 function acPanel(d){
@@ -263,7 +403,25 @@ async function viewFinder(v,deviceId){
 
 /* ---------------- custom IR ---------------- */
 async function viewIr(v){
-  $("#title").textContent="Custom IR";await loadDevices();
+  $("#title").textContent="API & raw IR";await loadDevices();const st=await api("/api/status").catch(()=>({}));const base=st.base_url||location.origin;
+  // API playground: pick a device + key (or scene), get ready-to-copy requests
+  const scenes=await api("/api/scenes").catch(()=>[]);
+  const pg=h(`<section class="card col" style="max-width:600px;margin:0 auto 16px"><div class="t1">API playground</div>
+    <div class="row" style="flex-wrap:wrap"><label class="sp">Device<select id="pd">${devices.map(d=>`<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("")}${scenes.length?`<option value="@scene">— Scenes —</option>`:""}</select></label><label class="sp">Key<select id="pb"></select></label></div>
+    <label>Format<select id="pf"><option value="url">URL (GET)</option><option value="curl">curl (POST)</option><option value="ha">Home Assistant rest_command</option><option value="js">JavaScript fetch</option></select></label>
+    <pre class="code" id="out" tabindex="0"></pre><div class="row" style="justify-content:flex-end"><button class="btn out" id="cp">Copy</button><button class="btn" id="try">Try it</button></div></section>`);
+  const pd=$("#pd",pg),pb=$("#pb",pg),pf=$("#pf",pg),out=$("#out",pg);
+  const auth=st.auth==="password";
+  const target=()=>pd.value==="@scene"?{url:`${base}/api/scenes/${enc(pb.value)}/run`,name:pb.value}:{url:`${base}/api/blast?device=${enc(pd.value)}&button=${enc(pb.value)}`,name:`${pd.value}_${pb.value}`.toLowerCase()};
+  const fill=()=>{if(pd.value==="@scene")pb.innerHTML=scenes.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");else{const d=devices.find(x=>x.id===pd.value);pb.innerHTML=(d?.buttons||[]).map(b=>`<option>${esc(b.name)}</option>`).join("")}gen()};
+  const gen=()=>{if(!pb.value){out.textContent="Add a device first";return}const t=target();const a=auth?" -u USER:PASSWORD":"";
+    out.textContent={url:t.url+(auth?"\n\n(Password mode: use http://USER:PASSWORD@host… or a Basic auth header)":""),
+      curl:`curl -X POST${a} "${t.url}"`,
+      ha:`rest_command:\n  ${t.name.replace(/[^a-z0-9_]/g,"_")}:\n    url: "${t.url}"\n    method: POST${auth?"\n    username: USER\n    password: PASSWORD":""}`,
+      js:`await fetch("${t.url}", { method: "POST"${auth?`, headers: { Authorization: "Basic " + btoa("USER:PASSWORD") }`:""} });`}[pf.value]};
+  pd.onchange=fill;pb.onchange=gen;pf.onchange=gen;$("#cp",pg).onclick=()=>copy(out.textContent);
+  $("#try",pg).onclick=async()=>{try{const r=await post(target().url.replace(base,""));toast(r.status==="ok"?"✓ Sent":`Status: ${r.status}`)}catch(e){toast(e.message)}};
+  fill();v.append(pg);
   const c=h(`<div class="card col" style="max-width:600px;margin:0 auto"><label>IR code<textarea id="ir" rows="4" placeholder="NEC 0x20DF10EF 32"></textarea></label><div class="ex">${esc(EXAMPLES).replace(/\n/g,"<br>")}</div>
     <button class="btn" id="send">⚡ Send</button><details><summary>Save as a button</summary><div class="col" style="margin-top:8px">
     <label>Device<select id="dev">${devices.map(d=>`<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("")}</select></label><label>Button name<input id="bn" placeholder="e.g. Input"></label><button class="btn ton" id="save">Save button</button></div></details></div>`);

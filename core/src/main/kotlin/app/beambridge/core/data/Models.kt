@@ -45,6 +45,16 @@ data class SavedDevice(
     val hidden: List<String> = emptyList(),
     /** User arrangement of the extra-keys grid: cell index → button name ("" = empty cell). Empty = default order. */
     val grid: List<String> = emptyList(),
+    /** Extra (non-default) keys the user put on the main remote screen. Custom keys are always on screen. */
+    val onScreen: List<String> = emptyList(),
+    /** D-pad as a swipe surface (swipe = arrows, tap = OK) instead of visible arrow buttons. */
+    val swipeDpad: Boolean = false,
+    /** Free-form remote arrangement (empty = default). See [RemoteGrid]. */
+    val tiles: List<Tile> = emptyList(),
+    val gridCols: Int = RemoteGrid.DEFAULT_COLS,
+    val gridRows: Int = RemoteGrid.DEFAULT_ROWS,
+    /** Keys shown as quick buttons on the home screen card. */
+    val favorites: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
 ) {
     fun button(name: String): SavedButton? =

@@ -49,7 +49,11 @@ class BridgeHttpServer(
     private fun constantTimeEquals(a: String, b: String) =
         java.security.MessageDigest.isEqual(a.toByteArray(Charsets.UTF_8), b.toByteArray(Charsets.UTF_8))
 
+    /** Who sent the current request: the bundled web UI tags itself, everything else is "api". */
+    private val source = ThreadLocal.withInitial { "api" }
+
     private fun route(s: IHTTPSession): Response {
+        source.set(if (s.headers["x-beambridge-client"] == "web") "web" else "api")
         val path = s.uri.trimEnd('/').ifEmpty { "/" }
         val parts = path.removePrefix("/").split('/').map { URLDecoder.decode(it, "UTF-8") }
         val m = s.method
@@ -64,6 +68,17 @@ class BridgeHttpServer(
             path == "/api/devices" && m == Method.GET -> ok(JsonArray(bridge.store.devices.value.map(::deviceJson)))
             path == "/api/devices" && m == Method.POST -> createDevice(params(s))
             parts.size == 3 && parts[1] == "devices" -> device(m, parts[2], params(s))
+            parts.size == 5 && parts[1] == "devices" && parts[3] == "tiles" && parts[4] == "reset" -> only(m, Method.POST) ?: run {
+                bridge.store.get(parts[2]) ?: return error(Response.Status.NOT_FOUND, "Unknown device '${parts[2]}'")
+                bridge.resetGrid(parts[2]); ok(deviceJson(bridge.store.get(parts[2])!!))
+            }
+            parts.size == 5 && parts[1] == "devices" && parts[3] == "tiles" -> only(m, Method.POST) ?: params(s).let { p ->
+                fun n(k: String) = p[k]?.toIntOrNull()
+                val col = n("col"); val row = n("row"); val w = n("w") ?: 1; val h = n("h") ?: 1
+                if (col == null || row == null) return error(Response.Status.BAD_REQUEST, "Need integer col and row (and optional w, h)")
+                bridge.moveTile(parts[2], parts[4], col, row, w, h)?.let { return error(if (it.startsWith("Unknown")) Response.Status.NOT_FOUND else Response.Status.BAD_REQUEST, it) }
+                ok(deviceJson(bridge.store.get(parts[2])!!))
+            }
             parts.size >= 4 && parts[1] == "devices" && parts[3] == "buttons" -> buttons(m, parts[2], parts.getOrNull(4), params(s))
 
             // catalog / pairing
@@ -75,6 +90,22 @@ class BridgeHttpServer(
             path == "/api/finder" -> ok(finderJson())
             path == "/api/finder/keys" -> ok(JsonArray(StandardKeys.FINDER_KEYS.map(::JsonPrimitive)))
             parts.size == 3 && parts[1] == "finder" -> only(m, Method.POST) ?: finder(parts[2], params(s))
+
+            // history
+            path == "/api/history" && m == Method.GET -> history(params(s))
+            path == "/api/history" && m == Method.DELETE -> { bridge.history.clear(); ok(buildJsonObject { put("status", "ok") }) }
+
+            // scenes
+            path == "/api/scenes" && m == Method.GET -> ok(JsonArray(bridge.scenes.scenes.value.map(::sceneJson)))
+            path == "/api/scenes" && m == Method.POST -> saveScene(null, s)
+            path == "/api/scene" -> only(m, Method.GET, Method.POST) ?: params(s).let { runScene(it["name"] ?: it["id"]) }
+            parts.size == 3 && parts[1] == "scenes" -> when (m) {
+                Method.GET -> bridge.scenes.get(parts[2])?.let { ok(sceneJson(it)) } ?: error(Response.Status.NOT_FOUND, "Unknown scene '${parts[2]}'")
+                Method.POST, Method.PUT -> saveScene(parts[2], s)
+                Method.DELETE -> if (bridge.scenes.remove(parts[2])) ok(buildJsonObject { put("status", "ok") }) else error(Response.Status.NOT_FOUND, "Unknown scene '${parts[2]}'")
+                else -> error(Response.Status.METHOD_NOT_ALLOWED, "Use GET/POST/DELETE")
+            }
+            parts.size == 4 && parts[1] == "scenes" && parts[3] == "run" -> only(m, Method.POST, Method.GET) ?: runScene(parts[2])
 
             // settings
             path == "/api/settings" && m == Method.GET -> ok(settingsJson())
@@ -100,7 +131,7 @@ class BridgeHttpServer(
     private fun blast(p: Map<String, String>): Response {
         val device = p["device"] ?: return error(Response.Status.BAD_REQUEST, "Missing 'device'")
         val button = p["button"] ?: return error(Response.Status.BAD_REQUEST, "Missing 'button'")
-        return result(controller.blast(device, button)) { put("device", device); put("button", button) }
+        return result(controller.blast(device, button, source.get())) { put("device", device); put("button", button) }
     }
 
     private fun parseCode(p: Map<String, String>): Pair<IrCode?, String?> = try {
@@ -116,19 +147,23 @@ class BridgeHttpServer(
         val (code, err) = parseCode(p)
         err?.let { return error(Response.Status.BAD_REQUEST, it) }
         code ?: return error(Response.Status.BAD_REQUEST, "Provide 'ir', 'frequency'+'pattern', 'pronto', or 'protocol'+'code'")
-        return result(controller.send(code, toggleKey = "raw"))
+        return result(controller.send(code, toggleKey = "raw", label = "RAW ${CodeInput.format(code).take(40)}", source = source.get()))
     }
 
     private fun ac(p: Map<String, String>): Response {
         val device = p["device"] ?: return error(Response.Status.BAD_REQUEST, "Missing 'device'")
-        val (res, state) = controller.ac(device) { cur ->
+        val power = p["power"]?.let { it.strictBool() ?: return error(Response.Status.BAD_REQUEST, "Invalid power '$it'. Use on or off") }
+        val temp = (p["temp"] ?: p["temperature"])?.let { it.trim().toIntOrNull() ?: return error(Response.Status.BAD_REQUEST, "Invalid temp '$it'") }
+        val (res, state) = controller.ac(device, source.get()) { cur ->
             AcState(
-                power = p["power"]?.let { it.equals("on", true) || it == "1" || it.equals("true", true) } ?: cur.power,
+                power = power ?: cur.power,
                 mode = p["mode"]?.lowercase() ?: cur.mode,
-                temperature = (p["temp"] ?: p["temperature"])?.toIntOrNull() ?: cur.temperature,
+                temperature = temp ?: cur.temperature,
                 fan = p["fan"]?.lowercase() ?: cur.fan,
             )
         }
+        if (res is SendResult.Failed && (res.message.startsWith("Unsupported") || res.message.startsWith("Temperature")))
+            return error(Response.Status.BAD_REQUEST, res.message)
         return result(res) {
             put("device", device)
             state?.let { put("state", acJson(it)) }
@@ -163,6 +198,12 @@ class BridgeHttpServer(
             Method.POST, Method.PUT -> {
                 p["name"]?.takeIf { it.isNotBlank() }?.let { n -> bridge.store.update(d.id) { it.copy(name = n.trim()) } }
                 p["archived"]?.let { bridge.setArchived(d.id, it.toBool()) }
+                p["swipe"]?.let { bridge.setSwipe(d.id, it.toBool()) }
+                if (p["grid_cols"] != null || p["grid_rows"] != null) {
+                    val c = p["grid_cols"]?.let { it.toIntOrNull() ?: return error(Response.Status.BAD_REQUEST, "Invalid grid_cols '$it'") }
+                    val r = p["grid_rows"]?.let { it.toIntOrNull() ?: return error(Response.Status.BAD_REQUEST, "Invalid grid_rows '$it'") }
+                    bridge.setGridSize(d.id, c, r)?.let { return error(Response.Status.BAD_REQUEST, it) }
+                }
                 ok(deviceJson(bridge.store.get(d.id)!!))
             }
             else -> error(Response.Status.METHOD_NOT_ALLOWED, "Use GET/POST/DELETE")
@@ -172,8 +213,12 @@ class BridgeHttpServer(
     private fun buttons(m: Method, id: String, button: String?, p: Map<String, String>): Response {
         val d = bridge.store.get(id) ?: return error(Response.Status.NOT_FOUND, "Unknown device '$id'")
         return when {
-            m == Method.DELETE && button != null -> { bridge.store.removeButton(d.id, button); ok(deviceJson(bridge.store.get(d.id)!!)) }
+            m == Method.DELETE && button != null ->
+                if (bridge.store.removeButton(d.id, button)) ok(deviceJson(bridge.store.get(d.id)!!))
+                else error(Response.Status.NOT_FOUND, "Device '${d.id}' has no custom button '$button'")
             m == Method.POST && button != null && p["hidden"] != null -> { bridge.setHidden(d.id, button, p.getValue("hidden").toBool()); ok(deviceJson(bridge.store.get(d.id)!!)) }
+            m == Method.POST && button != null && p["favorite"] != null -> { bridge.setFavorite(d.id, button, p.getValue("favorite").toBool()); ok(deviceJson(bridge.store.get(d.id)!!)) }
+            m == Method.POST && button != null && p["onscreen"] != null -> { bridge.setOnScreen(d.id, button, p.getValue("onscreen").toBool()); ok(deviceJson(bridge.store.get(d.id)!!)) }
             m == Method.POST && button != null && p["cell"] != null -> {
                 bridge.moveButton(d.id, button, p["cell"]?.toIntOrNull() ?: return error(Response.Status.BAD_REQUEST, "Bad 'cell'"))
                 ok(deviceJson(bridge.store.get(d.id)!!))
@@ -253,6 +298,67 @@ class BridgeHttpServer(
         }
     }
 
+    // ---------------------------------------------------------------- history & scenes
+
+    private fun history(p: Map<String, String>): Response {
+        val limit = p["limit"]?.let { it.toIntOrNull()?.takeIf { n -> n in 1..200 } ?: return error(Response.Status.BAD_REQUEST, "limit must be 1-200") } ?: 50
+        return ok(JsonArray(bridge.history.entries.value.take(limit).map { e ->
+            buildJsonObject {
+                put("time", e.time); e.device?.let { put("device", it) }; e.deviceName?.let { put("device_name", it) }
+                put("button", e.button); put("source", e.source); put("ok", e.ok); e.message?.let { put("message", it) }
+            }
+        }))
+    }
+
+    private fun sceneJson(sc: Scene) = buildJsonObject {
+        put("id", sc.id); put("name", sc.name)
+        put("url", "${endpoints.base()}/api/scenes/${java.net.URLEncoder.encode(sc.id, "UTF-8")}/run")
+        putJsonArray("steps") { sc.steps.forEach { st -> addJsonObject {
+            if (st.isWait) put("wait", st.delayMs) else { put("device", st.device); put("button", st.button) }
+        } } }
+    }
+
+    /**
+     * Body: JSON {"name": "...", "steps": [{"device":"tv","button":"POWER"}, {"wait":1500}, ...]}
+     * or form fields name + steps="tv:POWER, wait:1500, ac:POWER_ON".
+     */
+    private fun saveScene(id: String?, s: IHTTPSession): Response {
+        val p = params(s)
+        val body = p["__body"]?.takeIf { it.trimStart().startsWith("{") }
+        val (name, steps) = try {
+            if (body != null) {
+                val o = Json.parseToJsonElement(body).jsonObject
+                (o["name"]?.jsonPrimitive?.content ?: "") to (o["steps"]?.jsonArray ?: JsonArray(emptyList())).map { el ->
+                    val so = el.jsonObject
+                    so["wait"]?.jsonPrimitive?.content?.let { SceneStep(delayMs = it.toLongOrNull() ?: throw IllegalArgumentException("Bad wait '$it'")) }
+                        ?: SceneStep(so["device"]?.jsonPrimitive?.content ?: "", so["button"]?.jsonPrimitive?.content ?: "")
+                }
+            } else (p["name"] ?: "") to SceneText.parse(p["steps"] ?: "")
+        } catch (e: Exception) {
+            return error(Response.Status.BAD_REQUEST, e.message ?: "Bad scene")
+        }
+        return bridge.saveScene(id, name.ifBlank { id?.let { bridge.scenes.get(it)?.name } ?: "" }, steps).fold(
+            { ok(sceneJson(it), Response.Status.CREATED) },
+            { error(Response.Status.BAD_REQUEST, it.message ?: "Bad scene") },
+        )
+    }
+
+    private fun runScene(idOrName: String?): Response {
+        idOrName ?: return error(Response.Status.BAD_REQUEST, "Missing 'name'")
+        val sc = bridge.scenes.get(idOrName) ?: return error(Response.Status.NOT_FOUND, "Unknown scene '$idOrName'")
+        val results = bridge.runScene(sc, if (source.get() == "web") "web" else "scene")
+        val failed = results.count { it.second != null && it.second !is SendResult.Ok }
+        return ok(buildJsonObject {
+            put("status", if (failed == 0) "ok" else "partial"); put("scene", sc.id); put("failed", failed)
+            putJsonArray("steps") { results.forEach { (st, r) -> addJsonObject {
+                if (st.isWait) put("wait", st.delayMs) else {
+                    put("device", st.device); put("button", st.button); put("ok", r is SendResult.Ok)
+                    (r as? SendResult.Failed)?.let { put("error", it.message) }; (r as? SendResult.NotFound)?.let { put("error", it.message) }
+                }
+            } } }
+        })
+    }
+
     // ---------------------------------------------------------------- settings
 
     private fun settingsJson() = buildJsonObject {
@@ -268,14 +374,23 @@ class BridgeHttpServer(
 
     private fun saveSettings(p: Map<String, String>): Response {
         val cur = bridge.settings.settings.value
+        fun bad(msg: String) = error(Response.Status.BAD_REQUEST, msg)
+        // Every supplied value must parse; nothing is silently replaced by the current value.
+        val port = p["port"]?.let { it.trim().toIntOrNull() ?: return bad("Invalid port '$it'") } ?: cur.port
+        val bind = p["bind_address"]?.trim()?.let { a ->
+            if (a != "auto" && a != "0.0.0.0" && Net.bindOptions().none { it.address == a }) return bad("Unknown address '$a'. Use one from /api/network")
+            a
+        } ?: cur.bindAddress
+        val auth = p["auth"]?.let {
+            when (it.lowercase()) { "password" -> AuthMode.PASSWORD; "guest" -> AuthMode.GUEST; else -> return bad("Invalid auth '$it'. Use guest or password") }
+        } ?: cur.authMode
+        val wake = p["wake_lock"]?.let { it.strictBool() ?: return bad("Invalid wake_lock '$it'") } ?: cur.wakeLock
+        val auto = p["auto_start"]?.let { it.strictBool() ?: return bad("Invalid auto_start '$it'") } ?: cur.autoStart
         val next = cur.copy(
-            port = p["port"]?.toIntOrNull() ?: cur.port,
-            bindAddress = p["bind_address"] ?: cur.bindAddress,
-            authMode = p["auth"]?.let { if (it.equals("password", true)) AuthMode.PASSWORD else AuthMode.GUEST } ?: cur.authMode,
-            username = p["username"] ?: cur.username,
+            port = port, bindAddress = bind, authMode = auth,
+            username = p["username"]?.trim() ?: cur.username,
             password = p["password"]?.takeIf { it.isNotEmpty() } ?: cur.password,
-            wakeLock = p["wake_lock"]?.toBool() ?: cur.wakeLock,
-            autoStart = p["auto_start"]?.toBool() ?: cur.autoStart,
+            wakeLock = wake, autoStart = auto,
         )
         bridge.applySettings(next)?.let { return error(Response.Status.BAD_REQUEST, it) }
         return ok(settingsJson())
@@ -314,6 +429,7 @@ class BridgeHttpServer(
                     put("name", name)
                     put("custom", name in custom)
                     put("hidden", d.hidden.any { it.equals(name, true) })
+                    put("on_screen", d.onScreen.any { it.equals(name, true) })
                     put("url", endpoints.blast(d.id, name))
                     custom[name]?.let { put("code", codeText(it.code)) }
                 }
@@ -323,9 +439,17 @@ class BridgeHttpServer(
         putJsonObject("layout") {
             listOf("mute" to l.mute, "power" to l.power, "up" to l.up, "down" to l.down, "left" to l.left, "right" to l.right,
                 "ok" to l.ok, "vol_down" to l.volDown, "vol_up" to l.volUp, "ch_down" to l.chDown, "ch_up" to l.chUp,
-                "home" to l.home, "back" to l.back).forEach { (k, v) -> put(k, v) }
+                "home" to l.home, "back" to l.back, "settings" to l.settings).forEach { (k, v) -> put(k, v) }
             putJsonArray("extras") { l.extras.forEach { add(it) } }
+            putJsonArray("available") { l.available.forEach { add(it) } }
         }
+        put("swipe", d.swipeDpad)
+        val g = bridge.grid(d)
+        putJsonObject("grid") {
+            put("cols", g.cols); put("rows", g.rows)
+            putJsonArray("tiles") { g.tiles.forEach { t -> addJsonObject { put("id", t.id); put("col", t.col); put("row", t.row); put("w", t.w); put("h", t.h) } } }
+        }
+        putJsonArray("favorites") { d.favorites.forEach { add(it) } }
         d.acState?.let { put("ac_state", acJson(it)); put("ac_url", endpoints.ac(d.id, it)) }
         controller.acRemote(d)?.let { r ->
             putJsonObject("ac_caps") {
@@ -368,6 +492,12 @@ class BridgeHttpServer(
     }
 
     private fun buttonName(s: String) = s.trim().uppercase().replace(Regex("\\s+"), "_")
+    private fun String.strictBool(): Boolean? = when (lowercase()) {
+        "true", "1", "on", "yes" -> true
+        "false", "0", "off", "no" -> false
+        else -> null
+    }
+
     private fun String.toBool() = equals("true", true) || this == "1" || equals("on", true) || equals("yes", true)
 
     private fun params(s: IHTTPSession): Map<String, String> {
@@ -376,6 +506,7 @@ class BridgeHttpServer(
             val files = HashMap<String, String>()
             runCatching { s.parseBody(files) }
             files["postData"]?.let { body ->
+                out["__body"] = body
                 runCatching { Json.parseToJsonElement(body) as? JsonObject }.getOrNull()?.forEach { (k, v) ->
                     out[k] = when (v) {
                         is JsonArray -> v.joinToString(",") { (it as? JsonPrimitive)?.content ?: it.toString() }

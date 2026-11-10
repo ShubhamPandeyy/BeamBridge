@@ -151,4 +151,57 @@ class ServerTest {
         assertEquals(200, call("POST", "/api/finder/accept", "device=mystery&index=$idx&name=power").first)
         assertNotNull(store.get("mystery")!!.button("POWER"))
     }
+
+    // ---- round 4 ----
+
+    @Test fun caseInsensitiveDeleteAnd404ForMissingButton() {
+        call("POST", "/api/devices", "type=other&name=Living Room&button=Power&ir=NEC 0x20DF10EF 32")
+        assertEquals(404, call("DELETE", "/api/devices/living_room/buttons/NOPE").first)
+        assertEquals(200, call("DELETE", "/api/devices/LIVING_ROOM/buttons/power").first)
+        assertTrue(store.get("living_room")!!.buttons.isEmpty())
+        assertEquals(200, call("DELETE", "/api/devices/LIVING_ROOM").first)
+        assertNull(store.get("living_room"))
+    }
+
+    @Test fun invalidSettingsAreRejected() {
+        assertEquals(400, call("POST", "/api/settings", "port=abc").first)
+        assertEquals(400, call("POST", "/api/settings", "auth=admin").first)
+        assertEquals(400, call("POST", "/api/settings", "wake_lock=maybe").first)
+        assertEquals(400, call("POST", "/api/settings", "bind_address=10.9.9.9").first)
+        assertEquals(8080, settings.settings.value.port)
+    }
+
+    @Test fun historyRecordsSourceAndResult() {
+        call("GET", "/api/blast?device=tv_living_room&button=power")
+        call("GET", "/api/blast?device=tv_living_room&button=NOPE")
+        val h = call("GET", "/api/history?limit=5").second
+        assertTrue("\"button\":\"POWER\",\"source\":\"api\",\"ok\":true" in h, h)
+        assertTrue("\"ok\":false" in h, h)
+        assertEquals(400, call("GET", "/api/history?limit=0").first)
+    }
+
+    @Test fun scenesSaveRunAndValidate() {
+        assertEquals(400, call("POST", "/api/scenes", "name=Bad&steps=tv_living_room:NOPE").first)
+        val (c, b) = call("POST", "/api/scenes", """{"name":"Movie night","steps":[{"device":"tv_living_room","button":"POWER"},{"wait":20},{"device":"tv_living_room","button":"my_raw"}]}""", "application/json")
+        assertEquals(201, c, b)
+        val before = emitter.sent.size
+        val run = call("POST", "/api/scene?name=movie%20night").second
+        assertTrue("\"status\":\"ok\"" in run, run)
+        assertEquals(before + 2, emitter.sent.size)
+        assertEquals(200, call("DELETE", "/api/scenes/movie_night").first)
+    }
+
+    @Test fun toggleOnlyFlipsAfterSuccess() {
+        val failing = object : IrEmitter { override val isAvailable = true; var fail = true; val sent = mutableListOf<IrSignal>()
+            override fun transmit(signal: IrSignal) { if (fail) error("busy"); sent += signal } }
+        val st = InMemoryDeviceStore(listOf(SavedDevice("p", "P", DeviceType.OTHER, buttons = listOf(SavedButton("A", IrCode.Hex("RC5", "0x0C", 12, toggleMask = "0x800"))))))
+        val c = BridgeController(st, failing) { realDatasets }
+        assertTrue(c.blast("p", "A") is SendResult.Failed)
+        failing.fail = false
+        c.blast("p", "A"); c.blast("p", "A")
+        assertNotEquals(failing.sent[0].pattern.toList(), failing.sent[1].pattern.toList(), "toggle must alternate between successful sends")
+        val ref = FakeEmitter(); val c2 = BridgeController(InMemoryDeviceStore(st.devices.value), ref) { realDatasets }
+        c2.blast("p", "A")
+        assertEquals(ref.sent[0].pattern.toList(), failing.sent[0].pattern.toList(), "a failed send must not consume a toggle phase")
+    }
 }

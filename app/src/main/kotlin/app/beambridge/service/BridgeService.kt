@@ -23,6 +23,10 @@ import app.beambridge.MainActivity
 import app.beambridge.R
 import app.beambridge.core.server.BridgeHttpServer
 import app.beambridge.core.server.Net
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * Foreground service hosting the embedded HTTP server.
@@ -40,17 +44,34 @@ class BridgeService : Service() {
 
     private val graph get() = (application as BeamBridgeApp).graph
 
+    private val rebind = Runnable { if (BridgeRuntime.status.value.running) startServer(force = false) }
+
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = recheck()
         override fun onLost(network: Network) = recheck()
         override fun onLinkPropertiesChanged(network: Network, linkProperties: android.net.LinkProperties) = recheck()
         private fun recheck() {
-            handler.removeCallbacksAndMessages(null)
-            handler.postDelayed({ if (BridgeRuntime.status.value.running) startServer(force = false) }, 800)
+            handler.removeCallbacks(rebind)
+            handler.postDelayed(rebind, 800)
         }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /** Applies the wake-lock setting immediately while the server runs (no restart needed). */
+    private var settingsJob: kotlinx.coroutines.Job? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        settingsJob = graph.scope.launch {
+            graph.settings.settings.map { it.wakeLock }.distinctUntilChanged().drop(1).collect { on ->
+                handler.post {
+                    if (server == null) return@post
+                    if (on) acquireLocks() else { runCatching { wakeLock?.takeIf { it.isHeld }?.release() }; wakeLock = null }
+                }
+            }
+        }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -82,8 +103,9 @@ class BridgeService : Service() {
         if (host == "") {
             // A fixed address was chosen but is not on this phone right now (e.g. Wi-Fi off). Wait for the network callback.
             releaseLocks()
-            BridgeRuntime.status.value = ServerStatus(running = true, error = "${cfg.bindAddress} unavailable")
-            notify("Waiting for ${cfg.bindAddress}")
+            val what = if (cfg.bindAddress == "auto") "Wi-Fi" else cfg.bindAddress
+            BridgeRuntime.status.value = ServerStatus(running = true, error = "Waiting for $what")
+            notify("Waiting for $what")
             return
         }
         val s = BridgeHttpServer(host, port, graph.bridge)
@@ -120,6 +142,7 @@ class BridgeService : Service() {
     }
 
     override fun onDestroy() {
+        settingsJob?.cancel()
         if (callbackRegistered) runCatching {
             (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(networkCallback)
         }

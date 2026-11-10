@@ -13,13 +13,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -95,7 +97,7 @@ private fun OptionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, tit
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -134,11 +136,20 @@ private fun BrandStep(vm: MainViewModel, w: WizardState) {
             shape = MaterialTheme.shapes.extraLarge,
         )
         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(bottom = 32.dp)) {
+            if (w.type != DeviceType.AC) item {
+                ListItem(
+                    headlineContent = { Text("I don't know the brand") },
+                    supportingContent = { Text("Skip: we'll fire every TV code until yours reacts (TV finder)") },
+                    leadingContent = { Icon(Icons.Rounded.HelpOutline, null) },
+                    modifier = Modifier.clip(MaterialTheme.shapes.large).clickable { vm.unknownBrand() },
+                )
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            }
             items(w.brands, key = { it.id }) { b ->
                 ListItem(
                     headlineContent = { Text(b.name) },
                     supportingContent = { Text("${b.remotes} remote${if (b.remotes == 1) "" else "s"}") },
-                    trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
+                    trailingContent = { Icon(Icons.Rounded.KeyboardArrowRight, null) },
                     modifier = Modifier.clip(MaterialTheme.shapes.large).clickable { vm.pickBrand(b) },
                 )
             }
@@ -168,6 +179,7 @@ private fun TestStep(vm: MainViewModel, w: WizardState) {
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Text("Code ${w.index + 1} of ${w.candidates.size}", style = MaterialTheme.typography.titleMedium)
+        LinearProgressIndicator(progress = { (w.index + 1f) / w.candidates.size }, modifier = Modifier.fillMaxWidth(0.6f))
         Text(c.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         RemoteKey(key, onPress = vm::sendTest, onLongPress = vm::sendTest, size = 120.dp, container = MaterialTheme.colorScheme.primary, content = MaterialTheme.colorScheme.onPrimary)
         Text("Tap to send ${prettyName(key)}", style = MaterialTheme.typography.bodyLarge)
@@ -176,13 +188,26 @@ private fun TestStep(vm: MainViewModel, w: WizardState) {
             OutlinedButton(onClick = vm::nextCandidate, modifier = Modifier.weight(1f).height(52.dp)) { Text("No, try next") }
             Button(onClick = vm::confirmWorked, modifier = Modifier.weight(1f).height(52.dp)) { Text("Yes, it worked") }
         }
-        if (w.candidates.size > 1) TextButton(onClick = vm::previousCandidate) { Text("Back to previous code") }
+        if (w.candidates.size > 1 && w.index > 0) OutlinedButton(onClick = { vm.previousCandidate(); vm.sendTest() }) {
+            Icon(Icons.Rounded.Replay, null); Spacer(Modifier.width(8.dp)); Text("Test previous code again")
+        }
     }
 }
 
 @Composable
 private fun NameStep(vm: MainViewModel, w: WizardState) {
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (shown) 1f else 0.2f, androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 300f), label = "ok")
     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                Modifier.size(96.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.Check, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.onPrimary) }
+            Text("It works!", style = MaterialTheme.typography.headlineSmall)
+            Text("Code ${w.index + 1} of ${w.candidates.size} for ${w.brand?.name.orEmpty()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         OutlinedTextField(w.name, vm::setName, label = { Text("Device name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Button(onClick = vm::saveWizardDevice, enabled = w.name.isNotBlank(), modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Save device") }
     }

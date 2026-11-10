@@ -72,10 +72,10 @@ class PairingService(
         c.ac != null -> {
             // When the AC is already on, alternate between two temperatures so every press is a visible change.
             acProbeTemp = if (acProbeTemp == 24) 23 else 24
-            val state = AcState(power = true, mode = "cool", temperature = if (deviceOn) acProbeTemp else 24, fan = "auto")
+            val state = AcCodec.normalize(c.ac, AcState(power = true, mode = "cool", temperature = if (deviceOn) acProbeTemp else 24, fan = "auto"))
             controller.testAc(c.ac, state, previous = if (deviceOn) state.copy(temperature = 25) else AcState(power = false))
         }
-        else -> controller.send(c.tv!!.irCode(testKey(c, deviceOn))!!, toggleKey = "pairing")
+        else -> controller.send(c.tv!!.irCode(testKey(c, deviceOn))!!, toggleKey = "pairing", label = "Pairing test ${testKey(c, deviceOn)} (${c.label})", source = "wizard")
     }
 
     fun create(type: DeviceType, c: Candidate, name: String, brandName: String?): SavedDevice {
@@ -83,7 +83,7 @@ class PairingService(
         val id = store.newId(clean)
         val device = if (c.ac != null) SavedDevice(
             id = id, name = clean, type = DeviceType.AC, brand = brandName, catalog = c.ref,
-            acState = AcState(power = false, mode = "cool", temperature = c.ac.defaultTemperature.coerceIn(c.ac.temperatures)),
+            acState = AcCodec.normalize(c.ac, AcState(power = false, mode = "cool", temperature = c.ac.defaultTemperature)),
         ) else {
             val r = c.tv!!
             SavedDevice(

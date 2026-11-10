@@ -29,6 +29,9 @@ sealed interface Route {
     data class Device(val id: String) : Route
     data object Wizard : Route
     data class Finder(val deviceId: String) : Route
+    data object History : Route
+    data object Scenes : Route
+    data class SceneEdit(val id: String?) : Route
 }
 
 enum class WizardStep { Type, Custom, Brand, Power, Test, Name }
@@ -76,6 +79,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             Route.Hub -> return false
             is Route.Device -> home()
             is Route.Finder -> { finder.reset(); route.value = Route.Device(r.deviceId) }
+            Route.History, Route.Scenes -> home()
+            is Route.SceneEdit -> route.value = Route.Scenes
             Route.Wizard -> wizard.update {
                 when (it.step) {
                     WizardStep.Type -> { home(); it }
@@ -97,6 +102,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun bindOptions(): List<BindOption> = Net.bindOptions()
+
+    /** Wi-Fi network name when Android lets us read it (needs location permission on 8.1+), else "Wi-Fi"/null. */
+    @Suppress("DEPRECATION")
+    fun networkName(): String? {
+        val ctx = getApplication<Application>()
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return null
+        return when {
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> {
+                val ssid = (ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager).connectionInfo?.ssid
+                ssid?.trim('"')?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }?.let { "Wi-Fi: $it" } ?: "Wi-Fi"
+            }
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+            else -> null
+        }
+    }
 
     /** Async availability check for the settings sheet. */
     fun checkAddress(address: String, port: Int, onResult: (String) -> Unit) {
@@ -128,12 +149,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Live "sending / sent / failed" state of the most recent key press, for on-screen confirmation. */
+    val feedback = MutableStateFlow<SendFeedback?>(null)
+
     fun press(deviceId: String, button: String) {
-        viewModelScope.launch(Dispatchers.Default) { report(controller.blast(deviceId, button)) }
+        val id = System.nanoTime()
+        feedback.value = SendFeedback(id, button, SendFeedback.State.SENDING)
+        viewModelScope.launch(Dispatchers.Default) {
+            val r = controller.blast(deviceId, button)
+            feedback.value = SendFeedback(id, button, if (r is SendResult.Ok) SendFeedback.State.SENT else SendFeedback.State.FAILED, (r as? SendResult.Failed)?.message ?: (r as? SendResult.NotFound)?.message)
+            report(r)
+            delay(1200)
+            if (feedback.value?.id == id) feedback.value = null
+        }
     }
 
     fun sendCode(code: IrCode) {
-        viewModelScope.launch(Dispatchers.Default) { report(controller.send(code, toggleKey = "preview")) }
+        viewModelScope.launch(Dispatchers.Default) { report(controller.send(code, toggleKey = "preview", label = "Custom code ${CodeInput.format(code).take(32)}")) }
     }
 
     fun urlFor(deviceId: String, button: String) = graph.endpoints.blast(deviceId, button)
@@ -156,6 +188,79 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setHidden(id: String, button: String, hidden: Boolean) { bridge.setHidden(id, button, hidden) }
     fun showAllHidden(id: String) { graph.store.update(id) { it.copy(hidden = emptyList()) } }
     fun moveButton(id: String, button: String, cell: Int) { bridge.moveButton(id, button, cell) }
+    fun setOnScreen(id: String, button: String, on: Boolean) { bridge.setOnScreen(id, button, on) }
+    fun setSwipe(id: String, swipe: Boolean) { bridge.setSwipe(id, swipe) }
+    fun grid(device: SavedDevice) = bridge.grid(device)
+
+    /** One AC frame with the new temperature (the dial/slider), instead of N separate TEMP_UP presses. */
+    fun setAcTemperature(id: String, t: Int) {
+        feedback.value = SendFeedback(System.nanoTime(), "${t}°", SendFeedback.State.SENDING)
+        viewModelScope.launch(Dispatchers.Default) {
+            val (r, _) = controller.ac(id) { it.copy(power = true, temperature = t) }
+            feedback.value = SendFeedback(System.nanoTime(), "${t}°", if (r is SendResult.Ok) SendFeedback.State.SENT else SendFeedback.State.FAILED, (r as? SendResult.Failed)?.message)
+            report(r)
+        }
+    }
+    fun moveTile(id: String, tile: String, col: Int, row: Int, w: Int, h: Int) { bridge.moveTile(id, tile, col, row, w, h)?.let(::toast) }
+    fun setGridSize(id: String, cols: Int?, rows: Int?) { bridge.setGridSize(id, cols, rows)?.let(::toast) }
+    fun resetGrid(id: String) { bridge.resetGrid(id) }
+    fun setFavorite(id: String, button: String, on: Boolean) { bridge.setFavorite(id, button, on); toast(if (on) "Added to favourites" else "Removed from favourites") }
+    /** Last command that actually went out for this device (IR is one-way: this is what was sent, not confirmed). */
+    fun lastSent(deviceId: String) = graph.history.entries.value.firstOrNull { it.device == deviceId && it.ok }
+
+    /** App-only preferences (theme, lock screen, volume keys): saved without restarting the server. */
+    fun updatePrefs(transform: (BridgeSettings) -> BridgeSettings) { graph.settings.update(transform) }
+
+    // ---- phone volume keys --------------------------------------------------------------------------
+
+    private val held = mutableSetOf<Boolean>()      // true = up, false = down
+    private var chord = false
+    private var pendingVolume: Job? = null
+    /** Last power state sent per device by the volume-key chord, so discrete ON/OFF codes alternate. */
+    private val lastPowerOn = mutableMapOf<String, Boolean>()
+
+    /** Called for every volume key event while the app is in front. @return true when consumed. */
+    fun onVolumeKey(up: Boolean, pressed: Boolean, repeat: Int): Boolean {
+        val id = (route.value as? Route.Device)?.id ?: return false
+        if (!settings.value.volumeKeys) return false
+        val device = devices.value.firstOrNull { it.id == id } ?: return false
+        if (!pressed) {
+            held.remove(up)
+            if (held.isEmpty()) chord = false
+            return true
+        }
+        if (repeat == 0) held.add(up)
+        if (held.size == 2) {
+            if (!chord) { chord = true; pendingVolume?.cancel(); togglePower(device) }
+            return true
+        }
+        if (chord) return true
+        val key = if (up) "VOL_UP" else "VOL_DOWN"
+        val name = controller.buttonNames(device).firstOrNull { it.equals(key, true) }
+            ?: if (device.type == DeviceType.AC) (if (up) "TEMP_UP" else "TEMP_DOWN") else return true
+        pendingVolume?.cancel()
+        // Short wait on the first press so pressing both keys sends power only, not a volume step first.
+        pendingVolume = viewModelScope.launch { if (repeat == 0) delay(90); press(id, name) }
+        return true
+    }
+
+    private fun togglePower(device: SavedDevice) {
+        val names = controller.buttonNames(device).map { it.uppercase() }.toSet()
+        val wasOn = when {
+            device.type == DeviceType.AC -> device.acState?.power ?: false
+            else -> lastPowerOn[device.id] ?: false
+        }
+        val key = when {
+            device.type == DeviceType.AC -> if (wasOn) "POWER_OFF" else "POWER_ON"
+            "POWER_ON" in names && "POWER_OFF" in names -> if (wasOn) "POWER_OFF" else "POWER_ON"
+            "POWER" in names -> "POWER"
+            "POWER_TOGGLE" in names -> "POWER_TOGGLE"
+            else -> { toast("No power key"); return }
+        }
+        lastPowerOn[device.id] = !wasOn
+        press(device.id, key)
+        toast(if (key == "POWER_OFF") "Power off" else if (key == "POWER_ON") "Power on" else "Power")
+    }
 
     fun saveButton(deviceId: String, name: String, code: IrCode, replacing: String?): Boolean {
         val clean = name.trim().uppercase().replace(Regex("\\s+"), "_")
@@ -179,6 +284,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             for (name in r.buttons.keys) if (name.uppercase() !in have && name !in seen) seen[name] = r.irCode(name)!!
         }
         return seen.entries.sortedBy { StandardKeys.sortKey(it.key) }.map { it.key to it.value }
+    }
+
+    // ---- history -----------------------------------------------------------------------------------
+
+    val history: StateFlow<List<HistoryEntry>> = graph.history.entries
+    fun clearHistory() = graph.history.clear()
+
+    // ---- scenes / macros ----------------------------------------------------------------------------
+
+    val scenes: StateFlow<List<Scene>> = graph.scenes.scenes
+    /** Name of the scene currently running, for a progress indicator. */
+    val runningScene = MutableStateFlow<String?>(null)
+
+    fun runScene(scene: Scene) {
+        if (runningScene.value != null) { toast("A scene is already running"); return }
+        runningScene.value = scene.name
+        viewModelScope.launch(Dispatchers.IO) {
+            val results = bridge.runScene(scene, source = "scene")
+            val failed = results.count { it.second != null && it.second !is SendResult.Ok }
+            runningScene.value = null
+            toast(if (failed == 0) "${scene.name} done" else "${scene.name}: $failed step${if (failed == 1) "" else "s"} failed")
+        }
+    }
+
+    /** @return error text, or null when saved. */
+    fun saveScene(id: String?, name: String, steps: List<SceneStep>): String? =
+        bridge.saveScene(id, name, steps).fold({ route.value = Route.Scenes; toast("Saved"); null }, { it.message })
+
+    fun deleteScene(id: String) { graph.scenes.remove(id); route.value = Route.Scenes }
+    fun sceneUrl(scene: Scene) = "${graph.endpoints.base()}/api/scenes/${java.net.URLEncoder.encode(scene.id, "UTF-8")}/run"
+    fun copyText(label: String, text: String) {
+        val cm = getApplication<Application>().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText(label, text)); toast("Copied")
+    }
+
+    // ---- onboarding ---------------------------------------------------------------------------------
+
+    fun finishOnboarding(addDevice: Boolean) {
+        updatePrefs { it.copy(onboarded = true) }
+        if (addDevice) startWizard()
     }
 
     // ---- pairing wizard -----------------------------------------------------------------------------
@@ -243,6 +388,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setName(name: String) = wizard.update { it.copy(name = name) }
 
+    /** Unknown brand: make an empty device of this type and open the TV finder to discover its codes. */
+    fun unknownBrand() {
+        val type = wizard.value.type ?: DeviceType.TV
+        val d = pairing.createCustom(if (type == DeviceType.SET_TOP_BOX) "My set-top box" else "My TV", type, null)
+        wizard.value = WizardState()
+        openFinder(d.id)
+        toast("Pick POWER, point at the device and tap STOP when it reacts")
+    }
+
     fun saveWizardDevice() {
         val w = wizard.value
         val c = w.candidates.getOrNull(w.index) ?: return
@@ -278,4 +432,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         finder.accept(deviceId, name, index)
         toast("${name.ifBlank { "Button" }} saved")
     }
+}
+
+data class SendFeedback(val id: Long, val key: String, val state: State, val message: String? = null) {
+    enum class State { SENDING, SENT, FAILED }
 }
