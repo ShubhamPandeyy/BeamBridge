@@ -14,6 +14,10 @@ Control your devices from the iPhone's built-in Apple TV Remote.
 - Built on a Kotlin port of [atv-core](https://github.com/corvofeng/atv-core) (MIT), tested against pyatv. Unlike the original it checks the iPhone's pairing keys and uses fresh keys per connection. No Rust or NDK needed.
 - The web API's device JSON now includes `ios_gestures`.
 
+**Build and licence**
+- Fixed the Android build: BouncyCastle and jspecify both ship `META-INF/versions/9/OSGI-INF/MANIFEST.MF`, so packaging stopped on a duplicate. Both copies are now excluded.
+- Added an MIT `LICENSE` and `THIRD_PARTY_NOTICES.md` (atv-core, BouncyCastle).
+
 **Releases**
 - Tags like `v1.7` now get their CHANGELOG notes (the workflow used to look for a section named "1").
 - README's release section rewritten to say exactly what each kind of build publishes.

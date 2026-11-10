@@ -41,7 +41,11 @@ android {
     // Datasets are stored uncompressed so the SQLite DB can be copied out quickly.
     androidResources { noCompress += listOf("db", "json") }
 
-    packaging { resources.excludes += setOf("META-INF/INDEX.LIST", "META-INF/io.netty.versions.properties", "META-INF/DEPENDENCIES") }
+    packaging {
+        resources.excludes += setOf("META-INF/INDEX.LIST", "META-INF/io.netty.versions.properties", "META-INF/DEPENDENCIES")
+        // BouncyCastle and jspecify both ship this OSGi metadata; an app doesn't need either copy.
+        resources.excludes += setOf("META-INF/versions/*/OSGI-INF/MANIFEST.MF", "META-INF/versions/9/OSGI-INF/MANIFEST.MF")
+    }
 }
 
 dependencies {

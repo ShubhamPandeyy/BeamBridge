@@ -11,8 +11,9 @@ Pair your TV, AC or set-top box once. Control it from the app, a web dashboard, 
 ![Material 3](https://img.shields.io/badge/Material-3-6750A4?logo=materialdesign&logoColor=white)
 ![Jetpack Compose](https://img.shields.io/badge/Jetpack-Compose-4285F4?logo=jetpackcompose&logoColor=white)
 ![No cloud](https://img.shields.io/badge/cloud-none-success)
+![MIT](https://img.shields.io/badge/license-MIT-blue)
 
-[Features](#-features) · [How it works](#-how-it-works) · [Quick start](#-quick-start) · [API](#-http-api) · [Build](#-build) · [Troubleshooting](#-troubleshooting) · [Changelog](#-changelog)
+[Features](#-features) · [How it works](#-how-it-works) · [Quick start](#-quick-start) · [API](#-http-api) · [Build](#-build) · [Troubleshooting](#-troubleshooting) · [Changelog](#-changelog) · [License](#-license)
 
 </div>
 
@@ -285,6 +286,12 @@ GitHub Actions (`.github/workflows/android.yml`) runs the tests and builds the A
 
 ### Round 1
 - Core engine, HTTP server, Compose app, GitHub Actions build
+
+---
+
+## 📄 License
+
+[MIT](LICENSE). Third-party code and licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 
