@@ -470,6 +470,7 @@ class BridgeHttpServer(
         d.brand?.let { put("brand", it) }
         put("archived", d.archived)
         put("endpoint", endpoints.device(d.id))
+        putJsonObject("ios_gestures") { d.iosGestures.forEach { (g, b) -> put(g, b) } }
         val custom = d.buttons.filter { it.custom }.associateBy { it.name }
         putJsonArray("buttons") {
             controller.buttonNames(d).forEach { name ->

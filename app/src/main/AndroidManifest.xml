@@ -8,6 +8,8 @@
     <!-- Only to read the Wi-Fi network name for the dashboard (Android gates the SSID behind location). Never used for positioning. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- iPhone remote: lets Bonjour discovery packets through while the screen is off. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -44,6 +46,15 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Local network HTTP gateway that relays requests to the IR emitter" />
+        </service>
+
+        <service
+            android:name=".service.IosRemoteService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Appears as an Apple TV on the local network so the iPhone's remote can trigger the IR emitter" />
         </service>
     </application>
 </manifest>

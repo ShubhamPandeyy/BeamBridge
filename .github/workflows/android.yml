@@ -64,7 +64,7 @@ jobs:
   #  - push to main     -> refreshes ONE pre-release called "nightly" (no pile of releases for every commit)
   #  - "Run workflow"   -> a real release v<baseVersion>.<run number> (one click in the Actions tab)
   #  - push a v* tag    -> a real release named after the tag
-  # Notes: the CHANGELOG.md section for the current baseVersion, then the commits since the last release.
+  # Notes: the CHANGELOG.md section for the version (nightly: that only; real releases: plus GitHub's auto notes).
   release:
     needs: build
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -84,8 +84,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          BASE="${VERSION%.*}"
-          awk -v v="$BASE" '/^## /{p = ($2 == v || $2 == v".0")} p' CHANGELOG.md | tail -n +2 > notes.md
+          # CHANGELOG section for this version: try the full version, then drop trailing numbers (1.7.12 -> 1.7).
+          V="$VERSION"
+          while :; do
+            awk -v v="$V" '/^## /{p = ($2 == v || $2 == v".0")} p' CHANGELOG.md | tail -n +2 > notes.md
+            [ -s notes.md ] && break
+            case "$V" in *.*) V="${V%.*}" ;; *) break ;; esac
+          done
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"; TITLE="BeamBridge ${TAG#v}"; FLAGS="--latest"
           elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then

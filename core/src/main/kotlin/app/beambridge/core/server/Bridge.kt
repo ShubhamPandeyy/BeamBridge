@@ -8,6 +8,8 @@ interface BridgeHooks {
     fun restartServer() {}
     /** Address/port the server is currently bound to, so "is it free?" checks can ignore our own socket. */
     fun boundTo(): Pair<String?, Int>? = null
+    /** A device was deleted (from the app or the web), so per-device extras such as its iPhone-remote pairing can go too. */
+    fun deviceDeleted(id: String) {}
 }
 
 /** Everything the HTTP API and the app share. */
@@ -69,6 +71,7 @@ class Bridge(
     fun deleteDevice(id: String): Int {
         val d = store.get(id) ?: return 0
         store.remove(d.id)
+        hooks.deviceDeleted(d.id)
         var changed = 0
         for (sc in scenes.scenes.value) {
             if (sc.steps.none { !it.isWait && it.device.equals(d.id, true) }) continue

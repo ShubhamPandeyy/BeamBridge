@@ -117,6 +117,7 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
                                 trailingIcon = { Switch(device.swipeDpad, null) },
                                 onClick = { vm.setSwipe(device.id, !device.swipeDpad) },
                             )
+                            DropdownMenuItem(text = { Text("Set up iOS remote") }, leadingIcon = { Icon(Icons.Rounded.PhoneIphone, null) }, onClick = { menu = false; vm.openIosSetup(device.id) })
                             DropdownMenuItem(text = { Text("Find a code (TV finder)") }, leadingIcon = { Icon(Icons.Rounded.TravelExplore, null) }, onClick = { menu = false; vm.openFinder(device.id) })
                             if (device.hidden.isNotEmpty()) DropdownMenuItem(text = { Text("Hidden keys (${device.hidden.size})") }, leadingIcon = { Icon(Icons.Rounded.VisibilityOff, null) }, onClick = { menu = false; sheet = Sheet.Hidden })
                             DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { menu = false; sheet = Sheet.Rename })

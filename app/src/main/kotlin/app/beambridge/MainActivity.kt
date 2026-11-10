@@ -99,6 +99,7 @@ private fun App(vm: MainViewModel) {
     LaunchedEffect(Unit) {
         // First run asks inside onboarding instead.
         if (vm.settings.value.autoStart && !BridgeRuntime.status.value.running) vm.setServerRunning(true)
+        if (vm.settings.value.iosAutoStart && !vm.iosState.value.running) vm.setIosRemoteRunning(true)
     }
     // One host for the whole app; a new message replaces the current one instead of queueing behind it.
     LaunchedEffect(Unit) {
@@ -121,6 +122,7 @@ private fun App(vm: MainViewModel) {
                 Route.Wizard -> WizardScreen(vm, wizard)
                 Route.History -> HistoryScreen(vm)
                 Route.Scenes -> ScenesScreen(vm)
+                is Route.IosSetup -> devices.firstOrNull { it.id == r.deviceId }?.let { IosRemoteScreen(vm, it) } ?: LaunchedEffect(Unit) { vm.home() }
                 is Route.SceneEdit -> SceneEditorScreen(vm, r.id?.let { id -> vm.scenes.value.firstOrNull { it.id == id } }, devices)
             }
         }

@@ -53,6 +53,8 @@ data class SavedDevice(
     val gridRows: Int = RemoteGrid.DEFAULT_ROWS,
     /** Keys shown as quick buttons on the home screen card. */
     val favorites: List<String> = emptyList(),
+    /** iPhone Apple TV Remote gesture (`ios_*`, see IosGesture) → button name (or AC action) it sends. */
+    val iosGestures: Map<String, String> = emptyMap(),
     val createdAt: Long = System.currentTimeMillis(),
 ) {
     fun button(name: String): SavedButton? =

@@ -49,6 +49,15 @@ data class BridgeSettings(
     val onboarded: Boolean = false,
     /** The "long-press a key to edit" tip was dismissed. */
     val tipLongPress: Boolean = false,
+    // ---- iPhone remote (each device appears as an Apple TV in the iPhone's Control Center remote) ----
+    /** 4-digit PIN the iPhone asks for when pairing. Blank = not chosen yet (a random one is made on first start). */
+    val iosPin: String = "",
+    /** Only iPhones that paired with the PIN may connect. Off = any iPhone on the Wi-Fi (the original atv-core behaviour). */
+    val iosRequirePairing: Boolean = true,
+    /** Start the iPhone remote when the app opens. */
+    val iosAutoStart: Boolean = false,
+    /** Device ids NOT shown to the iPhone. */
+    val iosHidden: List<String> = emptyList(),
 ) {
     val hasPassword: Boolean get() = passwordHash.isNotEmpty() || password.isNotEmpty()
 
@@ -57,6 +66,7 @@ data class BridgeSettings(
         authMode == AuthMode.PASSWORD && username.isBlank() -> "Username needed"
         password.isNotEmpty() && password.length < 4 -> "Password needs 4+ characters"
         authMode == AuthMode.PASSWORD && !hasPassword -> "Password needs 4+ characters"
+        iosPin.isNotEmpty() && !Regex("\\d{4}").matches(iosPin) -> "iPhone PIN must be 4 digits"
         else -> null
     }
 

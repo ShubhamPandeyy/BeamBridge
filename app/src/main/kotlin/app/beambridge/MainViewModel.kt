@@ -13,6 +13,10 @@ import app.beambridge.core.server.Net
 import app.beambridge.core.server.SendResult
 import app.beambridge.service.BridgeRuntime
 import app.beambridge.service.BridgeService
+import app.beambridge.service.IosRemoteService
+import app.beambridge.core.atv.IosGesture
+import app.beambridge.core.atv.IosRemoteState
+import app.beambridge.core.atv.LearnState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,6 +36,8 @@ sealed interface Route {
     data object History : Route
     data object Scenes : Route
     data class SceneEdit(val id: String?) : Route
+    /** "Set up iOS remote": listens for iPhone gestures on one device and maps them to its buttons. */
+    data class IosSetup(val deviceId: String) : Route
 }
 
 enum class WizardStep { Type, Custom, Brand, Power, Test, Name }
@@ -87,6 +93,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             Route.History, Route.Scenes -> home()
             is Route.SceneEdit -> route.value = Route.Scenes
+            is Route.IosSetup -> { iosRemote.stopLearning(); route.value = Route.Device(r.deviceId) }
             Route.Wizard -> wizard.update {
                 when (it.step) {
                     WizardStep.Type -> { home(); it }
@@ -108,6 +115,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun bindOptions(): List<BindOption> = Net.bindOptions()
+
+    // ---- iPhone remote ------------------------------------------------------------------------------
+
+    val iosRemote = graph.iosRemote
+    val iosState: StateFlow<IosRemoteState> = iosRemote.state
+    val iosLearn: StateFlow<LearnState?> = iosRemote.learn
+
+    fun setIosRemoteRunning(on: Boolean) {
+        val ctx = getApplication<Application>()
+        if (on) IosRemoteService.start(ctx) else IosRemoteService.stop(ctx)
+    }
+
+    fun openIosSetup(deviceId: String) { route.value = Route.IosSetup(deviceId) }
+
+    /** Saves [gesture] → [button] (null removes it). */
+    fun setIosMapping(deviceId: String, gesture: String, button: String?) {
+        iosRemote.setMapping(deviceId, gesture, button)
+        toast(if (button == null) "Removed ${IosGesture.label(gesture)}" else "${IosGesture.label(gesture)} → $button saved")
+    }
+
+    /** @return error text, or null when saved. */
+    fun setIosPin(pin: String): String? {
+        if (!Regex("\\d{4}").matches(pin)) return "PIN must be 4 digits"
+        updatePrefs { it.copy(iosPin = pin) }
+        toast("PIN saved. Already-paired iPhones stay paired")
+        return null
+    }
+
+    fun setIosShown(deviceId: String, shown: Boolean) = updatePrefs { s ->
+        val rest = s.iosHidden.filterNot { it == deviceId }
+        s.copy(iosHidden = if (shown) rest else rest + deviceId)
+    }
+
+    fun forgetIphones() { viewModelScope.launch(Dispatchers.IO) { iosRemote.forgetPairings() }; toast("Forgot all paired iPhones") }
 
     /** True once the user granted location, which Android requires before it reveals the Wi-Fi name. */
     fun hasLocationPermission(): Boolean =

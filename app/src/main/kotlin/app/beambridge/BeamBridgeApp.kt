@@ -15,7 +15,9 @@ import app.beambridge.core.server.BridgeController
 import app.beambridge.core.server.BridgeHooks
 import app.beambridge.core.server.Endpoints
 import app.beambridge.core.server.Net
+import app.beambridge.core.atv.IosRemoteHub
 import app.beambridge.service.AndroidIrEmitter
+import app.beambridge.service.AndroidMdnsPublisher
 import app.beambridge.service.BridgeRuntime
 import app.beambridge.service.BridgeService
 import kotlinx.coroutines.CoroutineScope
@@ -48,9 +50,13 @@ class Graph(private val app: Application) {
     val pairing = PairingService({ datasets.value }, controller)
     val finder = Finder(controller, { datasets.value }, scope)
 
+    /** One fake Apple TV per device for the iPhone's Control Center remote; runs while [IosRemoteService] is on. */
+    val iosRemote = IosRemoteHub(store, settings, controller, File(app.filesDir, "ios_remote.json"), AndroidMdnsPublisher(app), scope)
+
     val bridge = Bridge(controller, pairing, finder, settings, endpoints, object : BridgeHooks {
         override fun restartServer() { if (BridgeRuntime.status.value.running) BridgeService.start(app) }
         override fun boundTo(): Pair<String?, Int>? = BridgeRuntime.bound
+        override fun deviceDeleted(id: String) = iosRemote.forgetDevice(id)
     }, scenes, isReady = { ready.value })
 
     private val notifier by lazy { SendNotifier(app) }

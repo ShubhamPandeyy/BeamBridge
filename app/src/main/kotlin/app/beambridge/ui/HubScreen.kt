@@ -62,6 +62,7 @@ fun HubScreen(vm: MainViewModel, devices: List<SavedDevice>, server: ServerStatu
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { ServerCard(vm, server, devices) }
+            item { IosRemoteCard(vm) }
             if (scenes.isNotEmpty()) item(key = "scenes") {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     scenes.forEach { sc ->
@@ -137,6 +138,39 @@ private fun EmptyState() {
         IconBadge(Icons.Rounded.SettingsRemote, size = 72.dp)
         Text("No devices yet", style = MaterialTheme.typography.titleMedium)
         Text("Tap Add device to pair a TV, AC or set-top box.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** On/off for the iPhone remote (every device shows up as an Apple TV in Control Center), next to the server card. */
+@Composable
+private fun IosRemoteCard(vm: MainViewModel) {
+    val cs = MaterialTheme.colorScheme
+    val state by vm.iosState.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val connected = state.entries.count { it.connected }
+    val container by androidx.compose.animation.animateColorAsState(if (state.running) cs.secondaryContainer else cs.surfaceContainerHighest, label = "ios")
+    ElevatedCard(shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.elevatedCardColors(containerColor = container)) {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                IconBadge(Icons.Rounded.PhoneIphone, size = 48.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(if (state.running) "iPhone remote on" else "iPhone remote off", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        if (!state.running) "Control devices from the Apple TV Remote in Control Center"
+                        else listOfNotNull(
+                            "${state.entries.size} device${if (state.entries.size == 1) "" else "s"} shown",
+                            if (connected > 0) "$connected connected" else null,
+                            "PIN ${settings.iosPin}",
+                        ).joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Switch(checked = state.running, onCheckedChange = vm::setIosRemoteRunning)
+            }
+            if (state.running) (state.error ?: state.lastEvent)?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = if (state.error != null) cs.error else cs.onSecondaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
     }
 }
 

@@ -2,6 +2,22 @@
 
 The section matching the current `baseVersion` is placed at the top of each GitHub Release's notes; the commit list is appended automatically (see `.github/workflows/android.yml`).
 
+## 1.7
+Control your devices from the iPhone's built-in Apple TV Remote.
+
+**iPhone remote**
+- Every device appears as its **own Apple TV** in Control Center → Apple TV Remote, so one iPhone controls the TV, the AC and the set-top box separately.
+- **Teach it gestures:** open a device → ⋮ → *Set up iOS remote*. The screen listens, you swipe or press on the iPhone, pick the button it should send, and save. Gestures you don't set up do nothing.
+- Touchpad strokes and buttons are separate: *Swipe up* and the *Up* button can send different keys. Gesture ids all start with `ios_` (`ios_swipe_up`, `ios_tap`, `ios_up`, `ios_select`, `ios_back`, `ios_tv`, `ios_play_pause`, `ios_volume_up`, `ios_mute`, `ios_power`…). AC devices can map gestures to AC actions such as Temp + or Mode cool.
+- **PIN pairing** with a PIN you choose (a random one is made on first start). *Only paired iPhones* is on by default, and *Forget all* makes every iPhone enter the PIN again.
+- Its own **on/off switch** on the home screen next to the server, with the PIN, how many devices are shown and the last gesture. Optional auto start. Choose which devices are shown in Settings → *iPhone remote*.
+- Built on a Kotlin port of [atv-core](https://github.com/corvofeng/atv-core) (MIT), tested against pyatv. Unlike the original it checks the iPhone's pairing keys and uses fresh keys per connection. No Rust or NDK needed.
+- The web API's device JSON now includes `ios_gestures`.
+
+**Releases**
+- Tags like `v1.7` now get their CHANGELOG notes (the workflow used to look for a section named "1").
+- README's release section rewritten to say exactly what each kind of build publishes.
+
 ## 1.6
 Fixes everything from the project audit.
 

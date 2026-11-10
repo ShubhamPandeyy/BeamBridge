@@ -54,6 +54,9 @@ fun SettingsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
             SwitchRow("Show remote on lock screen", "While a remote is open, it stays usable without unlocking", current.lockScreen) { on -> vm.updatePrefs { it.copy(lockScreen = on) } }
             HorizontalDivider()
 
+            IosRemoteSettings(vm)
+            HorizontalDivider()
+
             Text("Web UI access", style = MaterialTheme.typography.titleSmall)
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 listOf(AuthMode.GUEST to "Guest (open)", AuthMode.PASSWORD to "Username + password").forEachIndexed { i, (mode, label) ->
@@ -120,6 +123,52 @@ fun SettingsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
             ) { Text("Save") }
         }
     }
+}
+
+/** iPhone remote: PIN, who may connect, auto start, and which devices appear as Apple TVs. Changes apply at once. */
+@Composable
+private fun IosRemoteSettings(vm: MainViewModel) {
+    val current by vm.settings.collectAsStateWithLifecycle()
+    val state by vm.iosState.collectAsStateWithLifecycle()
+    val devices by vm.devices.collectAsStateWithLifecycle()
+    var pin by remember(current.iosPin) { mutableStateOf(current.iosPin) }
+    var pinError by remember { mutableStateOf<String?>(null) }
+    var confirmForget by remember { mutableStateOf(false) }
+
+    Text("iPhone remote", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Each device appears as an Apple TV in the iPhone's Control Center remote. Set up gestures from a device's ⋮ menu → Set up iOS remote.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(
+            pin, { pin = it.filter(Char::isDigit).take(4); pinError = null }, label = { Text("Pairing PIN") }, singleLine = true,
+            isError = pinError != null, supportingText = { Text(pinError ?: "4 digits. Asked once per iPhone.") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), modifier = Modifier.weight(1f),
+        )
+        OutlinedButton(onClick = { pinError = vm.setIosPin(pin) }, enabled = pin != current.iosPin) { Text("Save PIN") }
+    }
+    SwitchRow("Only paired iPhones", "Phones must enter the PIN once. Off lets any iPhone on your Wi-Fi control your devices.", current.iosRequirePairing) { on -> vm.updatePrefs { it.copy(iosRequirePairing = on) } }
+    SwitchRow("Start iPhone remote when the app opens", null, current.iosAutoStart) { on -> vm.updatePrefs { it.copy(iosAutoStart = on) } }
+    ListItem(
+        headlineContent = { Text("Paired iPhones: ${state.pairedPhones}") },
+        supportingContent = { Text("Forgetting makes every iPhone enter the PIN again") },
+        trailingContent = { TextButton(onClick = { confirmForget = true }, enabled = state.pairedPhones > 0) { Text("Forget all") } },
+    )
+    val active = devices.filterNot { it.archived }
+    if (active.isNotEmpty()) {
+        Text("Show to the iPhone", style = MaterialTheme.typography.labelLarge)
+        active.forEach { d ->
+            SwitchRow(d.name, if (d.iosGestures.isEmpty()) "No gestures set up" else "${d.iosGestures.size} gesture${if (d.iosGestures.size == 1) "" else "s"}", d.id !in current.iosHidden) { on -> vm.setIosShown(d.id, on) }
+        }
+    }
+    if (confirmForget) AlertDialog(
+        onDismissRequest = { confirmForget = false },
+        title = { Text("Forget all paired iPhones?") },
+        text = { Text("They'll need the PIN again to connect.") },
+        confirmButton = { TextButton(onClick = { vm.forgetIphones(); confirmForget = false }) { Text("Forget") } },
+        dismissButton = { TextButton(onClick = { confirmForget = false }) { Text("Cancel") } },
+    )
 }
 
 /** Shows whether Android lets us post notifications, with a shortcut to fix it (also for people who skipped onboarding). */

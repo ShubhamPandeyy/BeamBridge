@@ -37,6 +37,12 @@ Pair your TV, AC or set-top box once. Control it from the app, a web dashboard, 
 - Circular **temperature dial** and slider, mode and fan chips, power.
 - Shows the saved state and the last command actually sent. IR is one-way, so the AC can never confirm; the app says so plainly.
 
+### 📱 iPhone remote (Apple TV Remote → IR)
+- Every device shows up as its **own Apple TV** in the iPhone's Control Center remote: pick *TCL TV* or *Bedroom AC* at the top and control it.
+- **You choose what each gesture does.** On a device's remote: ⋮ → *Set up iOS remote*. The screen listens, you swipe or press on the iPhone, then pick the button it should send. Swipe up and the Up arrow are separate gestures, so they can send different buttons.
+- Pairs with a **4-digit PIN** you set (Settings → *iPhone remote*). By default only paired iPhones can connect; *Forget all* locks them out again.
+- Its own **on/off switch** on the home screen, next to the server. Works without the web server and without any app on the iPhone.
+
 ### 🎬 Scenes & macros
 - One tap, many commands: *TV power → wait 3 s → HDMI 1 → AC on*. Run from the home screen, the web UI, or `GET /api/scenes/{id}/run`.
 
@@ -67,14 +73,17 @@ flowchart LR
       E --> IR((IR blaster))
       B --> S[(Devices · scenes · history · settings)]
     end
+    IP[iPhone<br/>Apple TV Remote] -->|Bonjour + Companion<br/>one fake Apple TV per device| AT[IosRemoteHub]
+    AT --> C
     HA[Home Assistant<br/>Tasker · scripts] -->|HTTP| H
     Browser -->|HTTP| WEB
     IR -.->|infrared| TV[TV · AC · STB]
 ```
 
-- **`core/`** is a plain JVM module (no Android): encoders, catalogs, pairing, finder, scenes, the HTTP server. It is unit-tested on any JDK.
+- **`core/`** is a plain JVM module (no Android): encoders, catalogs, pairing, finder, scenes, the HTTP server and the Apple TV protocol. It is unit-tested on any JDK.
 - **`app/`** is the Android shell: Compose UI, the foreground service, the `ConsumerIrManager` emitter.
 - The app and the web dashboard talk to the **same `Bridge`**, so a change in one shows up in the other.
+- **iPhone remote:** `core/…/atv/` is a Kotlin port of [atv-core](https://github.com/corvofeng/atv-core) (MIT). Each device gets a fake Apple TV: Bonjour records (published with Android's `NsdManager`), PIN pairing (SRP-6a), an encrypted channel (X25519 + Ed25519 + ChaCha20-Poly1305 via BouncyCastle), and the Companion messages for button presses and touchpad strokes. A gesture becomes an `ios_*` id (`ios_swipe_up`, `ios_up`, `ios_select`…), which is looked up in the device's gesture map and sent like any other key. This uses Apple's private protocol, so an iOS update could change it.
 
 ---
 
@@ -91,6 +100,13 @@ curl -X POST "http://192.168.1.50:8080/api/blast?device=living_room_tv&button=PO
 
 > 💡 Long-press any key in the app for **Copy endpoint URL**, favourites, hide and layout options.
 
+### iPhone remote in 4 steps
+
+1. Home screen → turn on **iPhone remote**. Note the PIN on the card (change it in Settings).
+2. On the iPhone (same Wi-Fi): Control Center → **Apple TV Remote** → pick your device at the top → enter the PIN. *(No remote icon? iPhone Settings → Control Center → add Apple TV Remote.)*
+3. In BeamBridge open that device → ⋮ → **Set up iOS remote**. Swipe or press on the iPhone, pick the button, **Save**. Repeat for each gesture you want.
+4. Leave the setup screen. Gestures now send IR.
+
 ### Permissions, and why
 
 | Permission | Why | Required? |
@@ -100,6 +116,7 @@ curl -X POST "http://192.168.1.50:8080/api/blast?device=living_room_tv&button=PO
 | Notifications | Keep the bridge alive in the background and show the "beamed" confirmation | Optional |
 | Location | **Only** so Android reveals your Wi-Fi *name* for the dashboard. Your position is never read | Optional |
 | Wake lock / Wi-Fi lock | Keep answering requests with the screen off | Granted at install, toggle in Settings |
+| Wi-Fi multicast | iPhone remote: keep Bonjour discovery working with the screen off | Granted at install, used only while the iPhone remote is on |
 
 ---
 
@@ -162,6 +179,7 @@ The APK lands in `app/build/outputs/apk/debug/`. The GitHub Actions workflow in 
 | Compose BOM / Material 3 | 2025.09 / 1.4 |
 | compileSdk / minSdk | 36 / 26 |
 | Server | NanoHTTPD 2.3.1, kotlinx.serialization |
+| iPhone remote crypto | BouncyCastle 1.81 (pure Java) |
 
 ### Project layout
 
@@ -172,6 +190,7 @@ BeamBridge/
 │     ├─ kotlin/…/ir/         # NEC, Samsung, Sony, RC5/6, RCA, JVC, Panasonic, Sharp, Pronto, AC bytecode programs
 │     ├─ kotlin/…/data/       # catalogs, pairing, finder, scenes, history, remote grid, settings
 │     ├─ kotlin/…/server/     # Bridge, controller, HTTP server, network helpers
+│     ├─ kotlin/…/atv/        # iPhone remote: fake Apple TV (OPACK, TLV8, SRP, Companion session), IosRemoteHub
 │     └─ resources/web/       # the web dashboard (single HTML file)
 ├─ app/                       # Android shell (Compose UI, service, IR emitter)
 │  └─ src/main/assets/        # tv_remotes.json, extra_tv_remotes.json, ac_remotes.json, stb_remotes.json
@@ -190,13 +209,16 @@ BeamBridge/
 
 ### Releases
 
-Nothing to do by hand:
+GitHub Actions (`.github/workflows/android.yml`) runs the tests and builds the APK on every push and pull request. What lands on the **Releases** page depends on how the build started:
 
-- **Every push to `main`** refreshes a single **nightly** pre-release with the newest APK (so Releases doesn't fill up with one entry per commit).
-- **Actions → Build APK → Run workflow** publishes a real release `v<baseVersion>.<run number>` and marks it latest.
-- **Pushing a `v*` tag** publishes a real release named after the tag.
+| You do | You get | Release notes |
+|---|---|---|
+| Push to `main` | The **nightly** pre-release is replaced by the new APK, so there's only ever one nightly | The CHANGELOG section only |
+| Actions → **Build APK** → **Run workflow** | A real release `v<baseVersion>.<run number>`, marked *Latest* | CHANGELOG section + GitHub's auto notes (merged pull requests and a *Full Changelog* compare link) |
+| Push a tag such as `v1.7` or `v1.7.0` | A real release named after the tag, marked *Latest* | Same as above |
+| Open a pull request | Tests and APK as build artifacts, no release | – |
 
-Release notes are the `## <baseVersion>` section of [CHANGELOG.md](CHANGELOG.md) followed by the commits since the last release. Bump `baseVersion` in `app/build.gradle.kts` for a new feature round.
+**For a new feature round:** bump `baseVersion` in `app/build.gradle.kts` and add a `## <baseVersion>` section (e.g. `## 1.7`) at the top of [CHANGELOG.md](CHANGELOG.md). The workflow picks the section that matches the version, dropping trailing numbers until one matches (`1.7.12` → `1.7`). If none matches, the notes just say "Automated build". APKs are signed with the debug key so they install without setup; swap in a real keystore before publishing to a store.
 
 ## 🩺 Troubleshooting
 
@@ -213,6 +235,10 @@ Release notes are the `## <baseVersion>` section of [CHANGELOG.md](CHANGELOG.md)
 | "Allow" notifications does nothing | Android blocks the dialog after a denial; the button then opens the app's notification settings. |
 | Port busy / can't start | Pick another port in Settings → Network and use **Check**. |
 | Can't reach the dashboard from another device | Same Wi-Fi? Phone not in battery saver? Try the address shown on the status card. Guest isolation on some routers blocks it. |
+| iPhone doesn't list the device in Apple TV Remote | iPhone remote switch on? Same Wi-Fi (not guest, no "AP/client isolation")? Device not archived or hidden (Settings → *iPhone remote*)? Turning Wi-Fi off/on on the phone running BeamBridge re-announces it. |
+| iPhone says the PIN is wrong | Use the PIN on the home card / Settings. Changing the PIN only affects new pairings. |
+| iPhone was paired but now won't connect | It was forgotten (Settings → *Forget all*) or this device's data was reset: on the iPhone, pick the device again and enter the PIN. If it still fails after an iOS update, try turning off *Only paired iPhones*. |
+| A gesture does nothing | It isn't set up for that device (the home card says "not set up"). ⋮ → *Set up iOS remote*. A tap and a click are different gestures (*Tap* vs *Select*). |
 | AC shows a different state than reality | IR is one-way. Set the AC once with its real remote, or send the state again. |
 
 ---
@@ -222,6 +248,7 @@ Release notes are the `## <baseVersion>` section of [CHANGELOG.md](CHANGELOG.md)
 - Verify AC frames against real units and add checksum handling for non-default modes
 - Convert the remaining protocols to carrier-cycle timings
 - Home-screen widgets and quick-settings tiles for favourite keys
+- iPhone remote: hold-to-repeat (volume), run a scene from a gesture, gesture setup in the web dashboard
 
 ---
 
@@ -229,7 +256,11 @@ Release notes are the `## <baseVersion>` section of [CHANGELOG.md](CHANGELOG.md)
 
 > This section is updated with every release.
 
-### Round 6 (current): audit fixes, see [CHANGELOG.md](CHANGELOG.md)
+### Round 7 (current): iPhone remote, see [CHANGELOG.md](CHANGELOG.md)
+- Each device appears as its own Apple TV in the iPhone's Control Center remote; gestures are learned per device and send IR
+- PIN pairing with paired-only access, iPhone remote switch on the home screen, settings section; releases section and tag notes fixed
+
+### Round 6: audit fixes, see [CHANGELOG.md](CHANGELOG.md)
 - TV protocol numbering fixed (TCL/VU/Micromax/Akai codes now RCA), crash-safe storage, startup ready signal, CSRF-proof API with hashed password, lock-screen read-only mode, scene queue, finder ownership, batched history, nightly releases, lcndb.db replaced by a 320 KB JSON
 
 ### Round 5: see [CHANGELOG.md](CHANGELOG.md), which is also the text of each GitHub Release
