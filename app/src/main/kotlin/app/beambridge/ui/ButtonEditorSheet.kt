@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -76,7 +77,7 @@ fun ButtonEditorSheet(vm: MainViewModel, device: SavedDevice, existing: SavedBut
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 FilledTonalButton(onClick = { build()?.let(vm::sendCode) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Rounded.Send, null); Text("Test", Modifier.padding(start = 8.dp))
+                    Icon(Icons.AutoMirrored.Rounded.Send, null); Text("Test", Modifier.padding(start = 8.dp))
                 }
                 Button(
                     onClick = { build()?.let { if (vm.saveButton(device.id, name, it, existing?.name)) onDismiss() } },

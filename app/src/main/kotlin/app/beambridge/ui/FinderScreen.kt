@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -78,7 +79,7 @@ fun FinderScreen(vm: MainViewModel, device: SavedDevice) {
                     supportingContent = { Text(app.beambridge.core.data.CodeInput.format(code.code)) },
                     trailingContent = {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            IconButton(onClick = { vm.testFinder(index) }) { Icon(Icons.Rounded.Send, "Test") }
+                            IconButton(onClick = { vm.testFinder(index) }) { Icon(Icons.AutoMirrored.Rounded.Send, "Test") }
                             FilledTonalButton(onClick = { vm.acceptFinder(device.id, keyName, index); vm.finder.reset() }) { Text("Use") }
                         }
                     },
