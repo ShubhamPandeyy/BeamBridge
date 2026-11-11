@@ -309,6 +309,5 @@ private fun gestureIcon(g: String) = when {
     else -> Icons.Rounded.RadioButtonChecked
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ListeningIndicator() = LoadingIndicator(Modifier.size(44.dp))
+private fun ListeningIndicator() = ShapeSpinner(Modifier.size(36.dp))

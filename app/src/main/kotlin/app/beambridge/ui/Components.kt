@@ -19,10 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialShapes
-import androidx.compose.material3.toShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -35,6 +32,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -112,25 +123,51 @@ fun IconBadge(
 }
 
 /**
- * Material 3 Expressive identity shapes (MaterialShapes polygons). Power and OK are scalloped cookies; each device
- * type has its own badge shape, so a device is recognisable before its name is read.
+ * Wavy "polar" shape in the Material 3 Expressive style: a circle whose radius ripples [lobes] times around the edge
+ * ([depth] = how deep the ripples go, 0..1). 9 shallow lobes = scalloped cookie, 4 deep lobes = clover, and so on.
+ * Drawn here (not with Material's experimental MaterialShapes, which the stable 1.4 library keeps internal).
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-object BeamShapes {
-    val power: Shape @Composable get() = MaterialShapes.Cookie9Sided.toShape()
-    val ok: Shape @Composable get() = MaterialShapes.Cookie9Sided.toShape()
-    val iphone: Shape @Composable get() = MaterialShapes.Sunny.toShape()
-    val bridge: Shape @Composable get() = MaterialShapes.Sunny.toShape()
-    val scene: Shape @Composable get() = MaterialShapes.SoftBurst.toShape()
-    val coffee: Shape @Composable get() = MaterialShapes.Cookie9Sided.toShape()
-
-    @Composable
-    fun device(type: DeviceType): Shape = when (type) {
-        DeviceType.TV -> MaterialShapes.Clover4Leaf.toShape()
-        DeviceType.AC -> MaterialShapes.Cookie4Sided.toShape()
-        DeviceType.SET_TOP_BOX -> MaterialShapes.SoftBurst.toShape()
-        DeviceType.OTHER -> MaterialShapes.Sunny.toShape()
+class PolarShape(private val lobes: Int, private val depth: Float, private val rotationDeg: Float = 0f) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val path = Path()
+        val cx = size.width / 2f; val cy = size.height / 2f; val r = minOf(cx, cy)
+        val steps = 144
+        val rot = Math.toRadians(rotationDeg.toDouble())
+        for (i in 0..steps) {
+            val t = 2.0 * Math.PI * i / steps
+            val k = (1f - depth) + depth * (0.5f + 0.5f * cos(lobes * (t + rot)).toFloat())
+            val x = cx + r * k * cos(t).toFloat(); val y = cy + r * k * sin(t).toFloat()
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+        return Outline.Generic(path)
     }
+}
+
+/** Identity shapes: Power and OK are scalloped cookies; each device type has its own badge shape. */
+object BeamShapes {
+    val power: Shape = PolarShape(9, 0.12f)
+    val ok: Shape = PolarShape(9, 0.12f)
+    val iphone: Shape = PolarShape(4, 0.36f)
+    val bridge: Shape = PolarShape(8, 0.08f)
+    val scene: Shape = PolarShape(12, 0.14f)
+    val coffee: Shape = PolarShape(9, 0.12f)
+
+    fun device(type: DeviceType): Shape = when (type) {
+        DeviceType.TV -> PolarShape(4, 0.36f)
+        DeviceType.AC -> PolarShape(4, 0.18f, 45f)
+        DeviceType.SET_TOP_BOX -> PolarShape(12, 0.14f)
+        DeviceType.OTHER -> PolarShape(8, 0.08f)
+    }
+}
+
+/** Busy / listening indicator: a cookie that slowly spins and breathes (expressive stand-in for LoadingIndicator). */
+@Composable
+fun ShapeSpinner(modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.primary) {
+    val t = rememberInfiniteTransition(label = "spinner")
+    val angle by t.animateFloat(0f, 360f, infiniteRepeatable(tween(2400, easing = LinearEasing)), label = "angle")
+    val pulse by t.animateFloat(0.78f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse")
+    Box(modifier.graphicsLayer { rotationZ = angle; scaleX = pulse; scaleY = pulse }.clip(BeamShapes.scene).background(color))
 }
 
 /** Device badge: its type's shape and icon; containers rotate through primary / secondary / tertiary by type. */

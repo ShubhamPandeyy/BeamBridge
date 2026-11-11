@@ -145,9 +145,8 @@ fun connectedShape(i: Int, n: Int): RoundedCornerShape = when {
     else -> RoundedCornerShape(15)
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun LoadingDot() = LoadingIndicator(Modifier.size(20.dp))
+private fun LoadingDot() = ShapeSpinner(Modifier.size(18.dp), LocalContentColor.current)
 
 @OptIn(ExperimentalMaterial3Api::class)
 private fun Modifier.nestedScrollFix(b: TopAppBarScrollBehavior) = this.nestedScroll(b.nestedScrollConnection)
