@@ -27,7 +27,7 @@ Pair your TV, AC or set-top box once. Control it from the app, a web dashboard, 
 - **Add only what you need:** everything else the remote supports lives in ⋮ → *Add keys to screen*.
 - **Swipe D-pad** (swipe for arrows, tap for OK), **favourites** on the home card, haptic and visual send confirmation.
 - **Phone volume keys** control the open remote. Press both together to toggle power.
-- **Over the lock screen** (on by default; Settings → *Show remote on lock screen*): open a remote, lock the phone, press power, and it's still there. So you don't have to unlock the phone to change the channel.
+- **Over the lock screen** (on by default; Settings → Remote → *Show remote on lock screen*): open a remote, lock the phone, press power, and it's still there. So you don't have to unlock the phone to change the channel.
 
 ### 🧭 Pairing that finds the right code
 - Pick TV, AC, set-top box or **custom device**; choose the brand; say whether the device is **on or off** and the wizard picks a safe test key (Power, or Volume up).
@@ -40,7 +40,7 @@ Pair your TV, AC or set-top box once. Control it from the app, a web dashboard, 
 
 ### 📱 iPhone remote (Apple TV Remote → IR)
 - Every device shows up as its **own Apple TV** in the iPhone's Control Center remote: pick *TCL TV* or *Bedroom AC* at the top and control it.
-- **You choose what each gesture does.** On a device's remote: ⋮ → *Set up iOS remote*. The screen listens, you swipe or press on the iPhone, then pick the button it should send. Swipe up and the Up arrow are separate gestures, so they can send different buttons.
+- **You choose what each gesture does.** On a device's remote: ⋮ → *Set up iPhone remote*. The screen listens, you swipe or press on the iPhone, then pick the button it should send. Swipe up and the Up arrow are separate gestures, so they can send different buttons.
 - Pairs with a **4-digit PIN** you set (Settings → *iPhone remote*). By default only paired iPhones can connect; *Forget all* locks them out again.
 - Its own **on/off switch** on the home screen, next to the server. Works without the web server and without any app on the iPhone.
 
@@ -105,7 +105,7 @@ curl -X POST "http://192.168.1.50:8080/api/blast?device=living_room_tv&button=PO
 
 1. Home screen → turn on **iPhone remote**. Note the PIN on the card (change it in Settings).
 2. On the iPhone (same Wi-Fi): Control Center → **Apple TV Remote** → pick your device at the top → enter the PIN. *(No remote icon? iPhone Settings → Control Center → add Apple TV Remote.)*
-3. In BeamBridge open that device → ⋮ → **Set up iOS remote**. Swipe or press on the iPhone, pick the button, **Save**. Repeat for each gesture you want.
+3. In BeamBridge open that device → ⋮ → **Set up iPhone remote**. The device's remote is shown. Swipe or press on the iPhone, then tap the key it should press (or **Custom IR key** for a new one). Repeat for each gesture you want.
 4. Leave the setup screen. Gestures now send IR.
 
 ### Permissions, and why
@@ -225,21 +225,21 @@ GitHub Actions (`.github/workflows/android.yml`) runs the tests and builds the A
 
 | Symptom | Likely cause and fix |
 |---|---|
-| Sends "OK" but the device does nothing (Xiaomi / Poco / Redmi) | Qualcomm IR drivers drop odd-length pulse arrays. BeamBridge always ends a burst with a 10 ms space, like Mi Remote. Make sure you're on a recent build, and check the command shows as sent in **History**. |
+| Sends "OK" but the device does nothing (Xiaomi / Poco / Redmi) | Qualcomm IR drivers drop odd-length pulse arrays. BeamBridge always ends a burst with a 10 ms space so these drivers accept it. Make sure you're on a recent build, and check the command shows as sent in **History**. |
 | Dashboard shows only "Wi-Fi", not the network name | Grant the optional Location permission (home screen → *Show my Wi-Fi name*), and keep device location on. |
 | "Waiting for Wi-Fi" on the status card | Address is set to Automatic and no LAN is connected. It starts listening as soon as one appears. |
-| Remote disappears when locked | Keep the remote open when you lock. Settings → *Show remote on lock screen* must be on. |
+| Remote disappears when locked | Keep the remote open when you lock. Settings → Remote → *Show remote on lock screen* must be on. |
 | A brand's codes don't react (e.g. TCL from the dataset) | Fixed in 1.6: TV `PROTOCOL_n` codes were sent with an AC waveform. Re-pair, or just update: saved devices pick up the fix automatically. Brands whose protocol is still unknown are hidden; use the TV finder. |
 | The remote is on the lock screen but I can't edit keys | On purpose: over the lock screen keys only send. Unlock to edit, delete or copy URLs. |
 | An automation gets 403 | It looks like a browser page from another site. Call the API from a script or Home Assistant, or from the dashboard itself. |
 | An automation gets 405 on a GET link | *Allow actions from simple GET links* is off in Settings. Turn it on or use POST. |
 | "Allow" notifications does nothing | Android blocks the dialog after a denial; the button then opens the app's notification settings. |
-| Port busy / can't start | Pick another port in Settings → Network and use **Check**. |
+| Port busy / can't start | Pick another port in Settings → Web server and use **Check**. |
 | Can't reach the dashboard from another device | Same Wi-Fi? Phone not in battery saver? Try the address shown on the status card. Guest isolation on some routers blocks it. |
 | iPhone doesn't list the device in Apple TV Remote | iPhone remote switch on? Same Wi-Fi (not guest, no "AP/client isolation")? Device not archived or hidden (Settings → *iPhone remote*)? Turning Wi-Fi off/on on the phone running BeamBridge re-announces it. |
 | iPhone says the PIN is wrong | Use the PIN on the home card / Settings. Changing the PIN only affects new pairings. |
-| iPhone was paired but now won't connect | It was forgotten (Settings → *Forget all*) or this device's data was reset: on the iPhone, pick the device again and enter the PIN. If it still fails after an iOS update, try turning off *Only paired iPhones*. |
-| A gesture does nothing | It isn't set up for that device (the home card says "not set up"). ⋮ → *Set up iOS remote*. A tap and a click are different gestures (*Tap* vs *Select*). |
+| iPhone was paired but now won't connect | It was forgotten (Settings → iPhone remote → *Forget all*) or this device's data was reset: on the iPhone, pick the device again and enter the PIN. If it still fails after an iOS update, try turning off *Only paired iPhones*. |
+| A gesture does nothing | It isn't set up for that device (the setup screen lists saved gestures). ⋮ → *Set up iPhone remote*. A tap and a click are different gestures (*Tap* vs *Select*). |
 | AC shows a different state than reality | IR is one-way. Set the AC once with its real remote, or send the state again. |
 
 ---

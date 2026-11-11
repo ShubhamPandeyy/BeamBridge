@@ -32,10 +32,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -58,6 +64,7 @@ private sealed interface Sheet {
     data class Edit(val name: String?) : Sheet
     data object Hidden : Sheet
     data object AddKeys : Sheet
+    data object Menu : Sheet
     data object Rename : Sheet
     data object Delete : Sheet
     data object GridSize : Sheet
@@ -67,9 +74,8 @@ private sealed interface Sheet {
 @Composable
 fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
     var sheet by remember { mutableStateOf<Sheet?>(null) }
-    var menu by remember { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
-    val haptics = LocalHapticFeedback.current
+    val haptics = LocalBeamHaptics.current
     val datasets by vm.datasets.collectAsStateWithLifecycle()
     // Re-derive when the code datasets finish loading (an AC opened at startup otherwise keeps an empty layout).
     val layout = remember(device, datasets) { vm.layout(device) }
@@ -79,10 +85,10 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
     val feedback by vm.feedback.collectAsStateWithLifecycle()
     val prefs by vm.settings.collectAsStateWithLifecycle()
 
-    val press: (String) -> Unit = { n -> haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); vm.press(device.id, n) }
+    val press: (String) -> Unit = { n -> haptics.key(); vm.press(device.id, n) }
     val long: (String) -> Unit = { n ->
         if (locked) vm.toast("Unlock your phone to edit keys")
-        else { haptics.performHapticFeedback(HapticFeedbackType.LongPress); sheet = Sheet.Key(n) }
+        else { haptics.long(); sheet = Sheet.Key(n) }
     }
 
     Scaffold(
@@ -106,27 +112,8 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
                         return@TopAppBar
                     }
                     if (locked) { Icon(Icons.Rounded.Lock, "Locked: unlock to edit", Modifier.padding(end = 16.dp)); return@TopAppBar }
-                    IconButton(onClick = { sheet = Sheet.Edit(null) }) { Icon(Icons.Rounded.Add, "Add button") }
-                    Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "More") }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(text = { Text("Edit layout") }, leadingIcon = { Icon(Icons.Rounded.Dashboard, null) }, onClick = { menu = false; editing = true })
-                            if (layout.available.isNotEmpty()) DropdownMenuItem(text = { Text("Add keys to screen (${layout.available.size})") }, leadingIcon = { Icon(Icons.Rounded.AddCircleOutline, null) }, onClick = { menu = false; sheet = Sheet.AddKeys })
-                            if (layout.hasDpad) DropdownMenuItem(
-                                text = { Text("Swipe D-pad") }, leadingIcon = { Icon(Icons.Rounded.Swipe, null) },
-                                trailingIcon = { Switch(device.swipeDpad, null) },
-                                onClick = { vm.setSwipe(device.id, !device.swipeDpad) },
-                            )
-                            DropdownMenuItem(text = { Text("Set up iOS remote") }, leadingIcon = { Icon(Icons.Rounded.PhoneIphone, null) }, onClick = { menu = false; vm.openIosSetup(device.id) })
-                            DropdownMenuItem(text = { Text("Find a code (TV finder)") }, leadingIcon = { Icon(Icons.Rounded.TravelExplore, null) }, onClick = { menu = false; vm.openFinder(device.id) })
-                            if (device.hidden.isNotEmpty()) DropdownMenuItem(text = { Text("Hidden keys (${device.hidden.size})") }, leadingIcon = { Icon(Icons.Rounded.VisibilityOff, null) }, onClick = { menu = false; sheet = Sheet.Hidden })
-                            DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { menu = false; sheet = Sheet.Rename })
-                            DropdownMenuItem(text = { Text(if (device.archived) "Restore" else "Archive") }, leadingIcon = { Icon(Icons.Rounded.Archive, null) }, onClick = {
-                                menu = false; vm.setArchived(device.id, !device.archived); if (!device.archived) vm.home()
-                            })
-                            DropdownMenuItem(text = { Text("Delete", color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) }, onClick = { menu = false; sheet = Sheet.Delete })
-                        }
-                    }
+                    IconButton(onClick = { sheet = Sheet.AddKeys }) { Icon(Icons.Rounded.Add, "Add keys") }
+                    IconButton(onClick = { sheet = Sheet.Menu }) { Icon(Icons.Rounded.MoreVert, "More") }
                 },
             )
         },
@@ -137,14 +124,14 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
         ) {
             if (!prefs.tipLongPress && !editing) TipCard { vm.updatePrefs { it.copy(tipLongPress = true) } }
             if (editing) Text(
-                "Drag a key to move it. Drag the corner handle to resize. Keys can't overlap.",
+                "Keys are lifted: drag one to move it, drag its corner handle to resize. Keys can't overlap.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (device.type == DeviceType.AC && !editing) AcPanel(vm, device)
             GridRemote(
                 grid, layout, device.swipeDpad, editing, feedback,
                 press = press, long = long,
-                onEditStart = { if (!locked) { haptics.performHapticFeedback(HapticFeedbackType.LongPress); editing = true } },
+                onEditStart = { if (!locked) { haptics.long(); editing = true } },
                 onMove = { t, c, r, w, h -> vm.moveTile(device.id, t.id, c, r, w, h) },
             )
             if (device.buttons.isEmpty() && device.type != DeviceType.AC) {
@@ -158,7 +145,12 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
         is Sheet.Key -> KeySheet(vm, device, s.name, onDismiss = { sheet = null }, onLayout = { sheet = null; editing = true }, onEdit = { sheet = Sheet.Edit(s.name) })
         is Sheet.Edit -> ButtonEditorSheet(vm, device, s.name?.let { device.button(it) }) { sheet = null }
         Sheet.Hidden -> HiddenSheet(vm, device) { sheet = null }
-        Sheet.AddKeys -> AddKeysSheet(vm, device, layout) { sheet = null }
+        Sheet.AddKeys -> AddKeysSheet(vm, device, layout, onCustom = { sheet = Sheet.Edit(null) }) { sheet = null }
+        Sheet.Menu -> DeviceMenuSheet(
+            vm, device, layout.hasDpad, onDismiss = { sheet = null },
+            onEditLayout = { sheet = null; editing = true }, onHidden = { sheet = Sheet.Hidden },
+            onRename = { sheet = Sheet.Rename }, onDelete = { sheet = Sheet.Delete },
+        )
         Sheet.Rename -> RenameDialog(device.name, onDismiss = { sheet = null }) { vm.rename(device.id, it); sheet = null }
         Sheet.Delete -> ConfirmDelete(device.name, onDismiss = { sheet = null }) { sheet = null; vm.delete(device.id) }
         Sheet.GridSize -> GridSizeDialog(grid.cols, device.gridRows, onDismiss = { sheet = null }) { c, r -> vm.setGridSize(device.id, c, r); sheet = null }
@@ -197,14 +189,16 @@ private fun TipCard(onDismiss: () -> Unit) {
 // ---- free-form grid ------------------------------------------------------------------------------------
 
 /**
- * Remote laid out on a cols×rows grid of square cells. In edit mode tiles wiggle; drag one to move it, drag its
- * corner handle to resize. Positions snap to cells and the core rejects overlaps (the tile springs back).
+ * Remote laid out on a cols×rows grid of square cells. In edit mode every key lifts (raised, soft shadow); drag one
+ * to move it, drag its corner handle to resize. A drop guide shows where it will land. Positions snap to cells and
+ * the core rejects overlaps (the key springs back). [badges] marks keys with a small count (iOS gesture bindings).
  */
 @Composable
-private fun GridRemote(
+internal fun GridRemote(
     grid: RemoteGrid, l: RemoteLayout, swipe: Boolean, editing: Boolean, feedback: SendFeedback?,
     press: (String) -> Unit, long: (String) -> Unit, onEditStart: () -> Unit,
     onMove: (Tile, Int, Int, Int, Int) -> Unit,
+    badges: Map<String, Int> = emptyMap(),
 ) {
     val cs = MaterialTheme.colorScheme
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -215,22 +209,35 @@ private fun GridRemote(
             Modifier.fillMaxWidth().height(cell * grid.rows)
                 .pointerInput(editing) { if (!editing) detectTapGestures(onLongPress = { onEditStart() }) },
         ) {
-            if (editing) for (r in 0 until grid.rows) for (c in 0 until grid.cols) Box(
-                Modifier.offset(cell * c, cell * r).size(cell).padding(6.dp).clip(RoundedCornerShape(16.dp))
-                    .border(1.dp, cs.outlineVariant, RoundedCornerShape(16.dp)),
-            )
             grid.tiles.forEach { t ->
                 key(t) {
                     var drag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
                     var grow by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-                    val wiggle = if (editing) rememberInfiniteTransition(label = "wiggle").animateFloat(-1.2f, 1.2f, infiniteRepeatable(tween(140), RepeatMode.Reverse), label = "r").value else 0f
+                    val active = drag != androidx.compose.ui.geometry.Offset.Zero || grow != androidx.compose.ui.geometry.Offset.Zero
                     val w = (t.w + (grow.x / cellPx).roundToInt()).coerceAtLeast(1)
                     val h = (t.h + (grow.y / cellPx).roundToInt()).coerceAtLeast(1)
+                    val lift by animateDpAsState(if (active) 16.dp else if (editing) 6.dp else 0.dp, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMediumLow), label = "lift")
+                    val scale by animateFloatAsState(if (active) 1.06f else if (editing) 1.02f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMediumLow), label = "scale")
+                    if (active) {
+                        // Drop guide: where the key lands if you let go now.
+                        val gc = ((t.col * cellPx + drag.x) / cellPx).roundToInt().coerceIn(0, grid.cols - 1)
+                        val gr = ((t.row * cellPx + drag.y) / cellPx).roundToInt().coerceIn(0, grid.rows - 1)
+                        Box(
+                            Modifier.offset(cell * gc, cell * gr).size(cell * w, cell * h).padding(6.dp)
+                                .clip(RoundedCornerShape(24.dp)).background(cs.primary.copy(alpha = 0.10f))
+                                .border(1.5.dp, cs.primary.copy(alpha = 0.45f), RoundedCornerShape(24.dp)),
+                        )
+                    }
                     Box(
                         Modifier
+                            .zIndex(if (active) 1f else 0f)
                             .offset { IntOffset((t.col * cellPx + drag.x).roundToInt(), (t.row * cellPx + drag.y).roundToInt()) }
                             .size(cell * (if (grow == androidx.compose.ui.geometry.Offset.Zero) t.w else w), cell * (if (grow == androidx.compose.ui.geometry.Offset.Zero) t.h else h))
-                            .graphicsLayer { rotationZ = if (drag == androidx.compose.ui.geometry.Offset.Zero) wiggle else 0f; if (drag != androidx.compose.ui.geometry.Offset.Zero) { scaleX = 1.05f; scaleY = 1.05f } }
+                            .padding(6.dp)
+                            .graphicsLayer {
+                                scaleX = scale; scaleY = scale
+                                shadowElevation = lift.toPx(); shape = RoundedCornerShape(24.dp); clip = false
+                            }
                             .then(if (editing) Modifier.pointerInput(t) {
                                 detectDragGestures(
                                     onDragEnd = {
@@ -241,12 +248,11 @@ private fun GridRemote(
                                     },
                                     onDragCancel = { drag = androidx.compose.ui.geometry.Offset.Zero },
                                 ) { ch, d -> ch.consume(); drag += d }
-                            } else Modifier)
-                            .padding(6.dp),
+                            } else Modifier),
                     ) {
-                        TileContent(t, l, swipe, editing, feedback, press, long)
+                        TileContent(t, l, swipe, editing, feedback, press, long, badges)
                         if (editing) Box(
-                            Modifier.align(Alignment.BottomEnd).size(28.dp).clip(CircleShape).background(cs.primary)
+                            Modifier.align(Alignment.BottomEnd).offset(4.dp, 4.dp).size(28.dp).clip(CircleShape).background(cs.primary)
                                 .pointerInput(t) {
                                     detectDragGestures(
                                         onDragEnd = {
@@ -267,7 +273,7 @@ private fun GridRemote(
 }
 
 @Composable
-private fun TileContent(t: Tile, l: RemoteLayout, swipe: Boolean, editing: Boolean, f: SendFeedback?, press: (String) -> Unit, long: (String) -> Unit) {
+private fun TileContent(t: Tile, l: RemoteLayout, swipe: Boolean, editing: Boolean, f: SendFeedback?, press: (String) -> Unit, long: (String) -> Unit, badges: Map<String, Int>) {
     val cs = MaterialTheme.colorScheme
     // In edit mode keys don't fire; the grid handles drags.
     val p: (String) -> Unit = if (editing) { _ -> } else press
@@ -275,10 +281,10 @@ private fun TileContent(t: Tile, l: RemoteLayout, swipe: Boolean, editing: Boole
     when (t.id) {
         "@DPAD" -> BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             val d = minOf(maxWidth, maxHeight)
-            if (swipe) SwipePad(l, d, p) else Dpad(l, d, f, p, lp)
+            if (swipe) SwipePad(l, d, p) else Dpad(l, d, f, p, lp, enabled = !editing, badges = badges)
         }
-        "@VOL" -> Pill(l.volDown, l.volUp, "Volume", f, p, lp)
-        "@CH" -> Pill(l.chDown, l.chUp, "Channel", f, p, lp)
+        "@VOL" -> Pill(l.volDown, l.volUp, "Volume", f, p, lp, badges)
+        "@CH" -> Pill(l.chDown, l.chUp, "Channel", f, p, lp, badges)
         else -> {
             val power = t.id.uppercase().startsWith("POWER")
             TileKey(
@@ -286,10 +292,20 @@ private fun TileContent(t: Tile, l: RemoteLayout, swipe: Boolean, editing: Boole
                 container = if (power) cs.errorContainer else cs.secondaryContainer,
                 content = if (power) cs.onErrorContainer else cs.onSecondaryContainer,
                 icon = if (t.id.uppercase() in setOf("SETTINGS", "MENU", "OPTIONS", "TOOLS", "TCL_SETTINGS")) Icons.Rounded.Settings else buttonIcon(t.id),
-                showLabel = t.w > 1,
+                showLabel = t.w > 1, badge = badges[t.id] ?: 0,
             )
         }
     }
+}
+
+/** Small count bubble in a key's corner (how many iPhone gestures press it). */
+@Composable
+private fun BoxScope.CountBadge(count: Int) {
+    if (count <= 0) return
+    Box(
+        Modifier.align(Alignment.TopEnd).padding(4.dp).size(20.dp).clip(CircleShape).background(MaterialTheme.colorScheme.tertiary),
+        contentAlignment = Alignment.Center,
+    ) { Text("$count", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiary) }
 }
 
 /** Fills its tile. Flashes primary when its command was sent, error when it failed. */
@@ -298,7 +314,7 @@ private fun TileContent(t: Tile, l: RemoteLayout, swipe: Boolean, editing: Boole
 private fun TileKey(
     name: String, f: SendFeedback?, press: (String) -> Unit, long: (String) -> Unit, round: Boolean,
     container: Color, content: Color, icon: androidx.compose.ui.graphics.vector.ImageVector?, showLabel: Boolean,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier, badge: Int = 0,
 ) {
     val cs = MaterialTheme.colorScheme
     val source = remember { MutableInteractionSource() }
@@ -319,27 +335,108 @@ private fun TileKey(
             if (icon != null) Icon(icon, prettyName(name), Modifier.size(26.dp), tint = content)
             if (icon == null || showLabel) Text(if (showLabel) prettyName(name) else shortLabel(name), color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
+        CountBadge(badge)
     }
 }
 
-/** Big circular D-pad: arrows on a tonal ring, OK in the middle. */
+/**
+ * Big circular D-pad: arrows on a tonal ring, OK in the middle. Press anywhere and slide: the key under the finger
+ * lights up, and the one under it when you lift is sent (lift outside the pad = nothing). Hold still to long-press.
+ */
 @Composable
-private fun Dpad(l: RemoteLayout, d: Dp, f: SendFeedback?, press: (String) -> Unit, long: (String) -> Unit) {
+private fun Dpad(l: RemoteLayout, d: Dp, f: SendFeedback?, press: (String) -> Unit, long: (String) -> Unit, enabled: Boolean = true, badges: Map<String, Int> = emptyMap()) {
     val cs = MaterialTheme.colorScheme
-    Box(Modifier.size(d).clip(CircleShape).background(cs.primaryContainer.copy(alpha = 0.55f)).border(2.dp, cs.primaryContainer, CircleShape)) {
+    val haptics = LocalBeamHaptics.current
+    var hover by remember { mutableStateOf<String?>(null) }
+    val dPx = with(LocalDensity.current) { d.toPx() }
+    val slack = with(LocalDensity.current) { 24.dp.toPx() }
+    val pressNow by rememberUpdatedState(press)
+    val longNow by rememberUpdatedState(long)
+
+    fun keyAt(p: androidx.compose.ui.geometry.Offset): String? {
+        val c = dPx / 2
+        val dx = p.x - c; val dy = p.y - c
+        val r = kotlin.math.sqrt(dx * dx + dy * dy)
+        return when {
+            r <= dPx * 0.19f -> l.ok
+            r > dPx / 2 + slack -> null
+            abs(dx) > abs(dy) -> if (dx > 0) l.right else l.left
+            else -> if (dy > 0) l.down else l.up
+        }
+    }
+
+    Box(
+        Modifier.size(d).clip(CircleShape).background(cs.primaryContainer.copy(alpha = 0.55f)).border(2.dp, cs.primaryContainer, CircleShape)
+            .then(if (enabled) Modifier.pointerInput(l) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
+                    var key = keyAt(down.position); hover = key
+                    var slid = false
+                    fun track(ch: androidx.compose.ui.input.pointer.PointerInputChange) {
+                        if ((ch.position - down.position).getDistance() > viewConfiguration.touchSlop) slid = true
+                        val k = keyAt(ch.position)
+                        if (k != key) { key = k; hover = k; if (k != null) haptics.tick() }
+                        ch.consume()
+                    }
+                    val lifted = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                        while (true) {
+                            val ch = awaitPointerEvent().changes.first()
+                            track(ch)
+                            if (!ch.pressed) return@withTimeoutOrNull true
+                        }
+                        @Suppress("UNREACHABLE_CODE") false
+                    }
+                    if (lifted == null) {
+                        if (!slid && key != null) {
+                            // Held still: long-press that key, then swallow the rest of the gesture.
+                            hover = null
+                            longNow(key!!)
+                            do { val e = awaitPointerEvent(); e.changes.forEach { it.consume() } } while (e.changes.any { it.pressed })
+                            return@awaitEachGesture
+                        }
+                        while (true) { val ch = awaitPointerEvent().changes.first(); track(ch); if (!ch.pressed) break }
+                    }
+                    hover = null
+                    key?.let(pressNow)
+                }
+            } else Modifier),
+    ) {
         val key = d / 3.2f
         @Composable fun arrow(name: String?, align: Alignment) = name?.let {
             Box(Modifier.align(align).padding(4.dp).size(key)) {
-                TileKey(it, f, press, long, round = true, container = Color.Transparent, content = cs.onPrimaryContainer, icon = buttonIcon(it), showLabel = false)
+                DpadKey(it, hover == it, f, container = Color.Transparent, content = cs.onPrimaryContainer, icon = buttonIcon(it), badge = badges[it] ?: 0, press = press)
             }
         }
         arrow(l.up, Alignment.TopCenter); arrow(l.down, Alignment.BottomCenter)
         arrow(l.left, Alignment.CenterStart); arrow(l.right, Alignment.CenterEnd)
         l.ok?.let {
             Box(Modifier.align(Alignment.Center).size(d * 0.38f)) {
-                TileKey(it, f, press, long, round = true, container = cs.primary, content = cs.onPrimary, icon = null, showLabel = false)
+                DpadKey(it, hover == it, f, container = cs.primary, content = cs.onPrimary, icon = null, badge = badges[it] ?: 0, press = press)
             }
         }
+    }
+}
+
+/** A D-pad key's look only; the pad itself handles touches (so a finger can slide between keys). */
+@Composable
+private fun DpadKey(name: String, hovered: Boolean, f: SendFeedback?, container: Color, content: Color, icon: androidx.compose.ui.graphics.vector.ImageVector?, badge: Int, press: (String) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val mine = f?.key.equals(name, true)
+    val ring by animateColorAsState(
+        when { !mine -> Color.Transparent; f?.state == SendFeedback.State.FAILED -> cs.error; f?.state == SendFeedback.State.SENT -> cs.primary; else -> cs.outline },
+        label = "ring",
+    )
+    val scale by animateFloatAsState(if (hovered) 0.9f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "press")
+    val fill = if (hovered) (if (container == Color.Transparent) cs.primary.copy(alpha = 0.22f) else cs.primary.copy(alpha = 0.85f)) else container
+    Box(
+        Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(fill).border(3.dp, ring, CircleShape)
+            .semantics { role = Role.Button; contentDescription = prettyName(name); onClick { press(name); true } },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (icon != null) Icon(icon, null, Modifier.size(26.dp), tint = content)
+        else Text(shortLabel(name), color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        CountBadge(badge)
     }
 }
 
@@ -379,12 +476,12 @@ private fun SwipePad(l: RemoteLayout, d: Dp, press: (String) -> Unit) {
 
 /** Horizontal pill: minus on the left, plus on the right. */
 @Composable
-private fun Pill(minus: String?, plus: String?, label: String, f: SendFeedback?, press: (String) -> Unit, long: (String) -> Unit) {
+private fun Pill(minus: String?, plus: String?, label: String, f: SendFeedback?, press: (String) -> Unit, long: (String) -> Unit, badges: Map<String, Int> = emptyMap()) {
     val cs = MaterialTheme.colorScheme
     Row(Modifier.fillMaxSize().clip(CircleShape).background(cs.secondaryContainer), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.fillMaxHeight().aspectRatio(1.2f)) { minus?.let { TileKey(it, f, press, long, true, Color.Transparent, cs.onSecondaryContainer, Icons.Rounded.Remove, false) } }
+        Box(Modifier.fillMaxHeight().aspectRatio(1.2f)) { minus?.let { TileKey(it, f, press, long, true, Color.Transparent, cs.onSecondaryContainer, Icons.Rounded.Remove, false, badge = badges[it] ?: 0) } }
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = cs.onSecondaryContainer, textAlign = TextAlign.Center, maxLines = 1)
-        Box(Modifier.fillMaxHeight().aspectRatio(1.2f)) { plus?.let { TileKey(it, f, press, long, true, Color.Transparent, cs.onSecondaryContainer, Icons.Rounded.Add, false) } }
+        Box(Modifier.fillMaxHeight().aspectRatio(1.2f)) { plus?.let { TileKey(it, f, press, long, true, Color.Transparent, cs.onSecondaryContainer, Icons.Rounded.Add, false, badge = badges[it] ?: 0) } }
     }
 }
 
@@ -447,24 +544,66 @@ private fun HiddenSheet(vm: MainViewModel, device: SavedDevice, onDismiss: () ->
     }
 }
 
-/** Keys the device supports that aren't on the main screen yet. */
+/** The + button: make a new custom IR key, or put back a key the device supports that isn't on screen yet. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun AddKeysSheet(vm: MainViewModel, device: SavedDevice, layout: RemoteLayout, onDismiss: () -> Unit) {
+private fun AddKeysSheet(vm: MainViewModel, device: SavedDevice, layout: RemoteLayout, onCustom: () -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Add keys to screen", style = MaterialTheme.typography.titleLarge)
-            Text("Tap a key to add it. Long-press it on the remote to remove it again.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                layout.available.forEach { n ->
-                    FilterChip(
-                        selected = false, onClick = { vm.setOnScreen(device.id, n, true) },
-                        label = { Text(prettyName(n)) },
-                        leadingIcon = { Icon(buttonIcon(n) ?: Icons.Rounded.Add, null, Modifier.size(18.dp)) },
-                    )
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Add a key", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 8.dp))
+            MenuGroup(null) {
+                MenuRow(Icons.Rounded.AddCircleOutline, "New custom IR key", "Paste or type an IR code", chevron = true, onClick = onCustom)
+            }
+            if (layout.available.isNotEmpty()) MenuGroup("Put back on screen") {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(6.dp)) {
+                    FlowRow(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        layout.available.forEach { n ->
+                            AssistChip(
+                                onClick = { vm.setOnScreen(device.id, n, true) },
+                                label = { Text(prettyName(n)) },
+                                leadingIcon = { Icon(buttonIcon(n) ?: Icons.Rounded.Add, null, Modifier.size(18.dp)) },
+                            )
+                        }
+                    }
                 }
             }
-            if (layout.available.isEmpty()) Text("All keys are on screen.")
+        }
+    }
+}
+
+/** The ⋮ menu: a bottom sheet of grouped rows instead of a plain dropdown. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeviceMenuSheet(
+    vm: MainViewModel, device: SavedDevice, hasDpad: Boolean, onDismiss: () -> Unit,
+    onEditLayout: () -> Unit, onHidden: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                IconBadge(deviceIcon(device.type))
+                Column {
+                    Text(device.name, style = MaterialTheme.typography.titleLarge, maxLines = 1)
+                    Text("${device.buttons.size} keys", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            MenuGroup("Remote") {
+                MenuRow(Icons.Rounded.Dashboard, "Edit layout", "Move and resize keys", chevron = true, onClick = onEditLayout)
+                if (hasDpad) MenuSwitchRow(Icons.Rounded.Swipe, "Swipe D-pad", "Touchpad instead of arrow keys", device.swipeDpad) { vm.setSwipe(device.id, it) }
+                if (device.hidden.isNotEmpty()) MenuRow(Icons.Rounded.VisibilityOff, "Hidden keys", "${device.hidden.size} hidden", chevron = true, onClick = onHidden)
+            }
+            MenuGroup("iPhone & codes") {
+                val n = device.iosGestures.size
+                MenuRow(Icons.Rounded.PhoneIphone, "Set up iPhone remote", if (n == 0) "Bind iPhone gestures to keys" else "$n gesture${if (n == 1) "" else "s"} bound", chevron = true) { onDismiss(); vm.openIosSetup(device.id) }
+                MenuRow(Icons.Rounded.TravelExplore, "Find a code", "Try code sets until one works", chevron = true) { onDismiss(); vm.openFinder(device.id) }
+            }
+            MenuGroup("Device") {
+                MenuRow(Icons.Rounded.Edit, "Rename", onClick = onRename)
+                MenuRow(if (device.archived) Icons.Rounded.Unarchive else Icons.Rounded.Archive, if (device.archived) "Restore" else "Archive", if (device.archived) null else "Hide from home, keep its keys") {
+                    onDismiss(); vm.setArchived(device.id, !device.archived); if (!device.archived) vm.home()
+                }
+                MenuRow(Icons.Rounded.DeleteOutline, "Delete", danger = true, onClick = onDelete)
+            }
         }
     }
 }

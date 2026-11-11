@@ -49,6 +49,8 @@ data class BridgeSettings(
     val onboarded: Boolean = false,
     /** The "long-press a key to edit" tip was dismissed. */
     val tipLongPress: Boolean = false,
+    /** Key-press vibration: "off" | "light" | "medium" | "strong". */
+    val haptics: String = "medium",
     // ---- iPhone remote (each device appears as an Apple TV in the iPhone's Control Center remote) ----
     /** 4-digit PIN the iPhone asks for when pairing. Blank = not chosen yet (a random one is made on first start). */
     val iosPin: String = "",

@@ -38,6 +38,7 @@ sealed interface Route {
     data class SceneEdit(val id: String?) : Route
     /** "Set up iOS remote": listens for iPhone gestures on one device and maps them to its buttons. */
     data class IosSetup(val deviceId: String) : Route
+    data class Settings(val page: app.beambridge.ui.SettingsPage = app.beambridge.ui.SettingsPage.Root) : Route
 }
 
 enum class WizardStep { Type, Custom, Brand, Power, Test, Name }
@@ -56,6 +57,11 @@ data class WizardState(
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
+    companion object {
+        const val X_URL = "https://x.com/WhoisPandey"
+        const val GITHUB_URL = "https://github.com/ShubhamPandeyy/BeamBridge"
+    }
+
     private val graph = (app as BeamBridgeApp).graph
     private val bridge = graph.bridge
     private val controller = graph.controller
@@ -94,6 +100,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             Route.History, Route.Scenes -> home()
             is Route.SceneEdit -> route.value = Route.Scenes
             is Route.IosSetup -> { iosRemote.stopLearning(); route.value = Route.Device(r.deviceId) }
+            is Route.Settings -> if (r.page == app.beambridge.ui.SettingsPage.Root) home() else route.value = Route.Settings()
             Route.Wizard -> wizard.update {
                 when (it.step) {
                     WizardStep.Type -> { home(); it }
@@ -128,6 +135,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openIosSetup(deviceId: String) { route.value = Route.IosSetup(deviceId) }
+
+    fun openSettings(page: app.beambridge.ui.SettingsPage = app.beambridge.ui.SettingsPage.Root) { route.value = Route.Settings(page) }
+
+    /** "Buy me a coffee": no payments yet; opens the developer's X profile, then (1 s later) the GitHub repo. */
+    fun buyMeCoffee() {
+        val ctx = getApplication<Application>()
+        android.widget.Toast.makeText(ctx, "Thanks for considering, donations will open in next versions, meanwhile say a Hi :)", android.widget.Toast.LENGTH_LONG).show()
+        fun open(url: String) = runCatching {
+            ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure { toast("No browser found") }
+        viewModelScope.launch {
+            open(X_URL)
+            kotlinx.coroutines.delay(1000)
+            open(GITHUB_URL)
+        }
+    }
 
     /** Saves [gesture] → [button] (null removes it). */
     fun setIosMapping(deviceId: String, gesture: String, button: String?) {

@@ -80,10 +80,18 @@ class CompanionSession(
         const val DEVICE_MODEL = "AppleTV14,1"
         const val MEDIA_CONTROL_VOLUME = 0x0100L
         const val MAX_FRAME = 2 * 1024 * 1024
+        /**
+         * How long a verified connection may sit without starting a remote session. atv-core used 2.5–3 s, which can
+         * cut off a slow phone mid-handshake and cause a reconnect loop; 8 s still frees stale channels quickly.
+         */
+        const val VERIFIED_IDLE_MS = 8_000L
+        /** Background probes (rapportd/sharingd) never open a remote session: release them fast. */
+        const val PROBE_IDLE_MS = 1_500L
     }
 
     private val uniqueId = identity.serverIdentifier.toByteArray()
-    private var srp = SrpServer(pin())
+    /** Created only when PIN pairing actually starts: the 3072-bit maths is slow on phones and most connections never pair. */
+    private var srp: SrpServer? = null
     private var verifyKeys: AtvCrypto.X25519KeyPair? = null
     private var verifyClientPublic: ByteArray? = null
     private var verifyKey: ByteArray? = null
@@ -185,7 +193,7 @@ class CompanionSession(
     }
 
     private fun pairSetupM1() {
-        srp = SrpServer(pin())
+        val srp = SrpServer(pin()).also { this.srp = it }
         val tlv = Tlv8.write(Tlv8.SEQ_NO to byteArrayOf(2), Tlv8.SALT to srp.salt(), Tlv8.PUBLIC_KEY to srp.publicKey(), 27 to byteArrayOf(1))
         listener.onStatus("pairing", peer)
         sendOpack(FrameType.PS_NEXT, OValue.dict("_pd" to OValue.Bytes(tlv), "_pwTy" to OValue.Int(1)))
@@ -193,6 +201,7 @@ class CompanionSession(
 
     private fun pairSetupM3(pd: Map<Int, ByteArray>) {
         val clientPublic = pd[Tlv8.PUBLIC_KEY] ?: throw IllegalStateException("missing client public key")
+        val srp = this.srp ?: throw IllegalStateException("pair-setup M3 before M1")
         srp.process(clientPublic)
         val ok = pd[Tlv8.PROOF]?.let { srp.verifyProof(it) } ?: false
         val tlv = if (ok) Tlv8.write(Tlv8.SEQ_NO to byteArrayOf(4), Tlv8.PROOF to srp.keyProofHash())
@@ -202,7 +211,7 @@ class CompanionSession(
     }
 
     private fun pairSetupM5(pd: Map<Int, ByteArray>) {
-        val shared = srp.sessionKey()
+        val shared = (srp ?: throw IllegalStateException("pair-setup M5 before M1")).sessionKey()
         val sessionKey = AtvCrypto.hkdf("Pair-Setup-Encrypt-Salt", "Pair-Setup-Encrypt-Info", shared)
         val encrypted = pd[Tlv8.ENCRYPTED_DATA] ?: throw IllegalStateException("missing encrypted data")
         val client = Tlv8.read(CompanionCipher(sessionKey, sessionKey, 8).decrypt(encrypted, null, "PS-Msg05".toByteArray()))
@@ -234,7 +243,7 @@ class CompanionSession(
         val enc = CompanionCipher(sessionKey, sessionKey, 8).encrypt(tlv, null, "PS-Msg06".toByteArray())
         sendOpack(FrameType.PS_NEXT, OValue.dict("_pd" to OValue.Bytes(Tlv8.write(Tlv8.SEQ_NO to byteArrayOf(6), Tlv8.ENCRYPTED_DATA to enc))))
         listener.onStatus("paired", peer)
-        srp = SrpServer(pin())
+        srp = null
     }
 
     private fun pairVerifyM1(pd: Map<Int, ByteArray>) {
@@ -261,7 +270,7 @@ class CompanionSession(
         cipher = CompanionCipher(AtvCrypto.hkdf("", "ServerEncrypt-main", shared), AtvCrypto.hkdf("", "ClientEncrypt-main", shared), 12)
         sendOpack(FrameType.PV_NEXT, OValue.dict("_pd" to OValue.Bytes(Tlv8.write(Tlv8.SEQ_NO to byteArrayOf(4)))))
         listener.onStatus("verified", peer)
-        deadline = System.currentTimeMillis() + 3000 // must start a remote session soon or be closed
+        deadline = System.currentTimeMillis() + VERIFIED_IDLE_MS // must start a remote session or be closed
     }
 
     /** Decrypts PV-Msg03 and checks the iPhone signed (its key | its id | our key) with a key saved at pairing. */
@@ -326,7 +335,7 @@ class CompanionSession(
                 sendPowerState(null)
                 // Background probes (high bit in xid) never start a remote session: release them quickly.
                 val probe = xid != null && (xid and 0x8000_0000L) != 0L
-                if (!established) deadline = System.currentTimeMillis() + if (probe) 1000 else 2500
+                if (!established) deadline = System.currentTimeMillis() + if (probe) PROBE_IDLE_MS else VERIFIED_IDLE_MS
             }
             else -> if (xid != null) sendResponse(xid)
         }

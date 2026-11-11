@@ -12,8 +12,7 @@ data class IrSignal(val frequency: Int, val pattern: IntArray) {
 
     /**
      * Pattern safe for every ConsumerIrManager HAL. Qualcomm-based HALs (Xiaomi/Poco/Redmi) silently drop a burst whose
-     * pattern has an odd length (ends on a mark), so we always finish with a trailing space of at least [gap] µs —
-     * the same thing Mi Remote does.
+     * pattern has an odd length (ends on a mark), so we always finish with a trailing space of at least [gap] µs.
      */
     fun forHardware(gap: Int = TRAILING_GAP): IntArray = when {
         pattern.isEmpty() -> pattern

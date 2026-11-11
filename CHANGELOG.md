@@ -2,12 +2,24 @@
 
 The section matching the current `baseVersion` is placed at the top of each GitHub Release's notes; the commit list is appended automatically (see `.github/workflows/android.yml`).
 
+## 1.8
+
+- **iPhone remote is steadier:** it no longer re-announces itself every time Android reports a network change (that caused the jerky reconnects), only when the phone's address really changes. First pairing answers faster.
+- **Easier gesture setup:** the setup screen shows the device's real remote. Do a gesture on the iPhone, then tap the key it should press, or make a new custom IR key for it. Keys show how many gestures press them.
+- **Slide on the D-pad:** press and slide across the arrows; the key under your finger when you lift is the one sent. Lift outside the pad to cancel.
+- **Edit layout** lifts the keys instead of jiggling them, with a drop guide where a key will land. No more empty-box grid.
+- **Vibration** on key presses, with a strength setting (Off, Light, Medium, Strong) in Settings → Look & feel.
+- **Settings is a full page** with sections: Look & feel, Remote, iPhone remote, Web server, About.
+- **Buy me a coffee** in Settings (donations aren't open yet; it says hi instead).
+- Home screen: the bridge and the iPhone remote share one Connections card.
+- The ⋮ menu on a remote is a grouped sheet. Adding keys moved to the + button (new custom IR key, or put a hidden key back).
+
 ## 1.7
 Control your devices from the iPhone's built-in Apple TV Remote.
 
 **iPhone remote**
 - Every device appears as its **own Apple TV** in Control Center → Apple TV Remote, so one iPhone controls the TV, the AC and the set-top box separately.
-- **Teach it gestures:** open a device → ⋮ → *Set up iOS remote*. The screen listens, you swipe or press on the iPhone, pick the button it should send, and save. Gestures you don't set up do nothing.
+- **Teach it gestures:** open a device → ⋮ → *Set up iPhone remote*. The screen listens, you swipe or press on the iPhone, pick the button it should send, and save. Gestures you don't set up do nothing.
 - Touchpad strokes and buttons are separate: *Swipe up* and the *Up* button can send different keys. Gesture ids all start with `ios_` (`ios_swipe_up`, `ios_tap`, `ios_up`, `ios_select`, `ios_back`, `ios_tv`, `ios_play_pause`, `ios_volume_up`, `ios_mute`, `ios_power`…). AC devices can map gestures to AC actions such as Temp + or Mode cool.
 - **PIN pairing** with a PIN you choose (a random one is made on first start). *Only paired iPhones* is on by default, and *Forget all* makes every iPhone enter the PIN again.
 - Its own **on/off switch** on the home screen next to the server, with the PIN, how many devices are shown and the last gesture. Optional auto start. Choose which devices are shown in Settings → *iPhone remote*.

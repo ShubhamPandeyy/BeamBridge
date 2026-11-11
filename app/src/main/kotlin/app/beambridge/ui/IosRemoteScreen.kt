@@ -1,6 +1,11 @@
 package app.beambridge.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -31,16 +36,22 @@ import app.beambridge.core.atv.IosGesture
 import app.beambridge.core.data.SavedDevice
 
 /**
- * "Set up iOS remote": while open, gestures on this device's Apple TV (in the iPhone's Control Center remote) are
- * caught here instead of sent. Do a gesture, pick the button it should press, save.
+ * "Set up iPhone remote": while open, gestures on this device's Apple TV (the iPhone's Control Center remote) are
+ * caught here instead of sent. The device's real remote is shown below; do a gesture, then tap the key it should
+ * press (or make a new custom IR key for it). Keys show a small count of the gestures bound to them.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun IosRemoteScreen(vm: MainViewModel, device: SavedDevice) {
     val state by vm.iosState.collectAsStateWithLifecycle()
     val learn by vm.iosLearn.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    var editing by remember { mutableStateOf<String?>(null) }   // gesture whose button is being picked from the list
+    val datasets by vm.datasets.collectAsStateWithLifecycle()
+    val haptics = LocalBeamHaptics.current
+    var editing by remember { mutableStateOf<String?>(null) }   // saved gesture whose key is being changed from the list
+    var customFor by remember { mutableStateOf<String?>(null) } // gesture waiting for a new custom IR key
+    var namesBefore by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var customSheet by remember { mutableStateOf(false) }
 
     DisposableEffect(device.id) {
         vm.iosRemote.startLearning(device.id)
@@ -49,50 +60,173 @@ fun IosRemoteScreen(vm: MainViewModel, device: SavedDevice) {
 
     val entry = state.entries.firstOrNull { it.deviceId == device.id }
     val caught = learn?.takeIf { it.deviceId == device.id }?.gesture
-    val buttons = remember(device) { vm.buttonNames(device) }
+    val listening = state.running && entry != null
+    val buttons = remember(device, datasets) { vm.buttonNames(device) }
+    val layout = remember(device, datasets) { vm.layout(device) }
+    val grid = remember(device, datasets) { vm.grid(device) }
+    LaunchedEffect(caught) { if (caught != null) haptics.long() }
+
+    // Keys reachable on the grid; everything else the device knows goes in "More keys" chips.
+    val onGrid = remember(grid, layout) {
+        grid.tiles.flatMap { t ->
+            when (t.id) {
+                "@DPAD" -> listOfNotNull(layout.up, layout.down, layout.left, layout.right, layout.ok)
+                "@VOL" -> listOfNotNull(layout.volDown, layout.volUp)
+                "@CH" -> listOfNotNull(layout.chDown, layout.chUp)
+                else -> listOf(t.id)
+            }
+        }.map { it.uppercase() }.toSet()
+    }
+    val more = buttons.filter { it.uppercase() !in onGrid }
+    val badges = remember(device.iosGestures, buttons, onGrid) {
+        (buttons + grid.tiles.map { it.id } + listOfNotNull(layout.up, layout.down, layout.left, layout.right, layout.ok, layout.volDown, layout.volUp, layout.chDown, layout.chUp))
+            .distinct()
+            .associateWith { b -> device.iosGestures.values.count { it.equals(b, true) } }
+            .filterValues { it > 0 }
+    }
+
+    fun bind(key: String) {
+        val g = caught
+        if (g == null) { vm.toast(if (listening) "Do a gesture on your iPhone first" else "Turn on the iPhone remote first"); return }
+        haptics.key()
+        customFor = null
+        vm.setIosMapping(device.id, g, key)
+        vm.iosRemote.clearLearned()
+    }
+
+    // A custom key was just made for a waiting gesture: bind it.
+    LaunchedEffect(device.buttons) {
+        val g = customFor ?: return@LaunchedEffect
+        val added = device.buttons.map { it.name }.firstOrNull { it !in namesBefore } ?: return@LaunchedEffect
+        vm.setIosMapping(device.id, g, added)
+        vm.iosRemote.clearLearned()
+        customFor = null
+    }
 
     Scaffold(topBar = {
         TopAppBar(
-            title = { Column { Text("iOS remote"); Text(device.name, style = MaterialTheme.typography.bodyMedium) } },
+            title = { Column { Text("iPhone remote"); Text(device.name, style = MaterialTheme.typography.bodyMedium) } },
             navigationIcon = { IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
         )
     }) { pad ->
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { ConnectCard(vm, device, state.running, entry != null, entry?.connected == true, settings.iosPin, device.id in settings.iosHidden) }
+            if (!listening || entry?.connected != true) item {
+                ConnectCard(vm, device, state.running, entry != null, entry?.connected == true, settings.iosPin, device.id in settings.iosHidden)
+            }
+            stickyHeader {
+                ListenBanner(
+                    listening = listening, connected = entry?.connected == true, caught = caught,
+                    current = caught?.let { device.iosGestures[it] },
+                    onCustom = { g -> namesBefore = device.buttons.map { it.name }.toSet(); customFor = g; customSheet = true },
+                    onUnbind = { g -> customFor = null; vm.setIosMapping(device.id, g, null); vm.iosRemote.clearLearned() },
+                    onSkip = { customFor = null; vm.iosRemote.clearLearned() },
+                )
+            }
             item {
-                ListenCard(
-                    listening = state.running && entry != null, caught = caught, current = caught?.let { device.iosGestures[it] }, buttons = buttons,
-                    onSave = { g, b -> vm.setIosMapping(device.id, g, b); vm.iosRemote.clearLearned() },
-                    onDiscard = { vm.iosRemote.clearLearned() },
+                GridRemote(
+                    grid, layout, swipe = false, editing = false, feedback = null,
+                    press = ::bind, long = ::bind, onEditStart = {}, onMove = { _, _, _, _, _ -> }, badges = badges,
                 )
             }
-            item { Text("Saved gestures (${device.iosGestures.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
-            if (device.iosGestures.isEmpty()) item {
-                Text("None yet. Gestures you don't set up do nothing.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            val order = IosGesture.LABELS.keys.toList()
-            items(device.iosGestures.entries.sortedBy { order.indexOf(it.key).let { i -> if (i < 0) 999 else i } }.toList(), key = { it.key }) { (g, b) ->
-                val missing = buttons.none { it.equals(b, true) }
-                ListItem(
-                    headlineContent = { Text(IosGesture.label(g)) },
-                    supportingContent = { Text(if (missing) "$b · missing, pick another button" else "→ ${prettyName(b)}", color = if (missing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) },
-                    leadingContent = { Icon(gestureIcon(g), null) },
-                    trailingContent = {
-                        Row {
-                            IconButton(onClick = { editing = g }) { Icon(Icons.Rounded.Edit, "Change button") }
-                            IconButton(onClick = { vm.setIosMapping(device.id, g, null) }) { Icon(Icons.Rounded.DeleteOutline, "Remove") }
+            if (more.isNotEmpty()) item {
+                MenuGroup(if (grid.tiles.isEmpty()) "Keys" else "More keys") {
+                    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(6.dp)) {
+                        FlowRow(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            more.forEach { b ->
+                                val n = badges[b] ?: 0
+                                AssistChip(
+                                    onClick = { bind(b) },
+                                    label = { Text(if (n > 0) "${prettyName(b)} · $n" else prettyName(b)) },
+                                    leadingIcon = { Icon(buttonIcon(b) ?: Icons.Rounded.RadioButtonChecked, null, Modifier.size(18.dp)) },
+                                )
+                            }
                         }
-                    },
-                )
+                    }
+                }
+            }
+            item { Text("Saved gestures (${device.iosGestures.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp, start = 4.dp)) }
+            if (device.iosGestures.isEmpty()) item {
+                Text("None yet. Gestures you don't set up do nothing.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
+            } else item {
+                val order = IosGesture.LABELS.keys.toList()
+                MenuGroup(null) {
+                    device.iosGestures.entries.sortedBy { order.indexOf(it.key).let { i -> if (i < 0) 999 else i } }.forEach { (g, b) ->
+                        val missing = buttons.none { it.equals(b, true) }
+                        MenuRow(
+                            gestureIcon(g), IosGesture.label(g),
+                            if (missing) "$b · missing, pick another key" else "Presses ${prettyName(b)}",
+                            danger = missing,
+                            trailing = {
+                                Row {
+                                    IconButton(onClick = { editing = g }) { Icon(Icons.Rounded.Edit, "Change key") }
+                                    IconButton(onClick = { vm.setIosMapping(device.id, g, null) }) { Icon(Icons.Rounded.DeleteOutline, "Remove") }
+                                }
+                            },
+                        )
+                    }
+                }
             }
         }
     }
 
     editing?.let { g ->
         ButtonPickerDialog(IosGesture.label(g), buttons, device.iosGestures[g], onDismiss = { editing = null }) { b -> vm.setIosMapping(device.id, g, b); editing = null }
+    }
+    // Closing without saving leaves the gesture caught, so the user can tap a key instead.
+    if (customSheet) ButtonEditorSheet(vm, device, null) { customSheet = false }
+}
+
+/** Pinned under the top bar: "Listening…", or the caught gesture with what to do next. */
+@Composable
+private fun ListenBanner(
+    listening: Boolean, connected: Boolean, caught: String?, current: String?,
+    onCustom: (String) -> Unit, onUnbind: (String) -> Unit, onSkip: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    Surface(
+        color = if (caught != null) cs.primaryContainer else cs.surfaceContainerHigh,
+        shape = RoundedCornerShape(28.dp), shadowElevation = if (caught != null) 6.dp else 0.dp,
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+    ) {
+        AnimatedContent(caught, label = "listen") { g ->
+            if (g == null) Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(0.35f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "a")
+                Icon(Icons.Rounded.TouchApp, null, Modifier.size(32.dp).alpha(if (listening) pulse else 0.35f))
+                Column {
+                    Text(if (listening) "Listening…" else "Not listening", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        when {
+                            !listening -> "Turn on the iPhone remote and show this device first."
+                            !connected -> "Open the remote on your iPhone and pick this device."
+                            else -> "Swipe, tap or press a button on your iPhone. Nothing is sent while this screen is open."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            } else Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(44.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
+                        Icon(gestureIcon(g), null, tint = cs.onPrimary)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(IosGesture.label(g), style = MaterialTheme.typography.titleMedium, color = cs.onPrimaryContainer)
+                        Text(
+                            (current?.let { "Now presses ${prettyName(it)}. " } ?: "") + "Tap a key below to bind it.",
+                            style = MaterialTheme.typography.bodySmall, color = cs.onPrimaryContainer,
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FilledTonalButton(onClick = { onCustom(g) }) { Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Custom IR key") }
+                    if (current != null) TextButton(onClick = { onUnbind(g) }) { Text("Unbind") }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onSkip) { Text("Skip") }
+                }
+            }
+        }
     }
 }
 
@@ -129,46 +263,6 @@ private fun ConnectCard(vm: MainViewModel, device: SavedDevice, running: Boolean
                         Text("PIN  $pin", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace)
                     }
                     Text("Don't see the remote? iPhone Settings → Control Center → add Apple TV Remote.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ListenCard(listening: Boolean, caught: String?, current: String?, buttons: List<String>, onSave: (String, String) -> Unit, onDiscard: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    var pick by remember(caught) { mutableStateOf(current) }
-    var menu by remember { mutableStateOf(false) }
-    ElevatedCard(shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.elevatedCardColors(containerColor = if (caught != null) cs.primaryContainer else cs.surfaceContainerHigh)) {
-        AnimatedContent(caught, label = "listen") { g ->
-            Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (g == null) {
-                    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(0.35f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "a")
-                    Icon(Icons.Rounded.TouchApp, null, Modifier.size(48.dp).alpha(if (listening) pulse else 0.35f))
-                    Text(if (listening) "Listening…" else "Not listening", style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        if (listening) "Swipe, tap or press a button on your iPhone's remote. Nothing is sent while this screen is open."
-                        else "Turn on the iPhone remote and show this device first.",
-                        style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
-                    )
-                } else {
-                    Icon(gestureIcon(g), null, Modifier.size(48.dp))
-                    Text("Got: ${IosGesture.label(g)}", style = MaterialTheme.typography.titleLarge)
-                    current?.let { Text("Currently presses ${prettyName(it)}", style = MaterialTheme.typography.bodySmall) }
-                    Box {
-                        OutlinedButton(onClick = { menu = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(pick?.let { "Press: ${prettyName(it)}" } ?: "Choose a button…"); Spacer(Modifier.weight(1f)); Icon(Icons.Rounded.ArrowDropDown, null)
-                        }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.heightIn(max = 360.dp)) {
-                            if (buttons.isEmpty()) DropdownMenuItem(text = { Text("This device has no buttons yet") }, onClick = { menu = false }, enabled = false)
-                            buttons.forEach { b -> DropdownMenuItem(text = { Text(prettyName(b)) }, onClick = { pick = b; menu = false }) }
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        TextButton(onClick = onDiscard) { Text("Try another") }
-                        Button(onClick = { pick?.let { onSave(g, it) } }, enabled = pick != null) { Text("Save") }
-                    }
                 }
             }
         }

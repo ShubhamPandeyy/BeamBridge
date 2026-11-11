@@ -1,5 +1,5 @@
 // Bump baseVersion for a feature round; CI appends its run number so every build gets a unique, increasing version.
-val baseVersion = "1.7"
+val baseVersion = "1.8"
 val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
 
 plugins {

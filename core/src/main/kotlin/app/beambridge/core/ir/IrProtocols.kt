@@ -33,7 +33,7 @@ sealed class IrProtocol(val key: String, val defaultFrequency: Int, val defaultB
         }
     }
 
-    // NEC-family timings as whole 38 kHz carrier cycles (26.3 µs each), the way Mi Remote builds them:
+    // NEC-family timings as whole 38 kHz carrier cycles (26.3 µs each), which Qualcomm IR drivers handle best:
     // leader 342/171 cycles, bit mark 21, "0" space 21, "1" space 60 cycles (1579 µs). Receivers decode these the
     // same as the nominal 560/1690 µs, but some Xiaomi/Qualcomm IR HALs round non-cycle-aligned durations badly.
     data object Nec : PulseDistance("NEC", 38_000, 32, cyc(342), cyc(171), cyc(21), cyc(21), cyc(60))

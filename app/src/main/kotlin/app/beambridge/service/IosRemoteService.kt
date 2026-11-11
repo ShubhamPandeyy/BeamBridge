@@ -38,12 +38,32 @@ class IosRemoteService : Service() {
     private var stateJob: Job? = null
     private val hub get() = (application as BeamBridgeApp).graph.iosRemote
 
-    private val republish = Runnable { hub.republish() }
+    /**
+     * Re-announce the Apple TVs only when the phone's IPv4 address really changed (new Wi-Fi, new DHCP lease).
+     * Android fires network callbacks right after registering and on tiny updates (IPv6 refresh, DNS); re-announcing
+     * on those made the iPhone see every Apple TV vanish and reconnect, the "jerky" pairing in 1.7.
+     */
+    private var lastAddresses: Set<String>? = null
+    private val recheck = Runnable {
+        val now = currentIpv4()
+        val before = lastAddresses
+        lastAddresses = now
+        if (before != null && now != before && now.isNotEmpty()) hub.republish()
+    }
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = later()
+        override fun onLost(network: Network) = later()
         override fun onLinkPropertiesChanged(network: Network, linkProperties: android.net.LinkProperties) = later()
-        private fun later() { handler.removeCallbacks(republish); handler.postDelayed(republish, 1500) }
+        private fun later() { handler.removeCallbacks(recheck); handler.postDelayed(recheck, 1500) }
     }
+
+    private fun currentIpv4(): Set<String> = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.toList() }
+            .filterIsInstance<java.net.Inet4Address>()
+            .map { it.hostAddress.orEmpty() }.toSet()
+    }.getOrDefault(emptySet())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -55,6 +75,7 @@ class IosRemoteService : Service() {
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
         )
         acquireLocks()
+        if (lastAddresses == null) lastAddresses = currentIpv4()
         hub.start()
         if (stateJob == null) stateJob = (application as BeamBridgeApp).graph.scope.launch {
             hub.state.map { s -> s.entries.size to s.entries.count { it.connected } }.distinctUntilChanged().collect { (n, live) ->

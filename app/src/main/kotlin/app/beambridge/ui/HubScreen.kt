@@ -20,8 +20,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.beambridge.MainViewModel
@@ -61,8 +59,7 @@ fun HubScreen(vm: MainViewModel, devices: List<SavedDevice>, server: ServerStatu
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { ServerCard(vm, server, devices) }
-            item { IosRemoteCard(vm) }
+            item { ConnectionsCard(vm, server, devices) }
             if (scenes.isNotEmpty()) item(key = "scenes") {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     scenes.forEach { sc ->
@@ -141,41 +138,8 @@ private fun EmptyState() {
     }
 }
 
-/** On/off for the iPhone remote (every device shows up as an Apple TV in Control Center), next to the server card. */
 @Composable
-private fun IosRemoteCard(vm: MainViewModel) {
-    val cs = MaterialTheme.colorScheme
-    val state by vm.iosState.collectAsStateWithLifecycle()
-    val settings by vm.settings.collectAsStateWithLifecycle()
-    val connected = state.entries.count { it.connected }
-    val container by androidx.compose.animation.animateColorAsState(if (state.running) cs.secondaryContainer else cs.surfaceContainerHighest, label = "ios")
-    ElevatedCard(shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.elevatedCardColors(containerColor = container)) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                IconBadge(Icons.Rounded.PhoneIphone, size = 48.dp)
-                Column(Modifier.weight(1f)) {
-                    Text(if (state.running) "iPhone remote on" else "iPhone remote off", style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        if (!state.running) "Control devices from the Apple TV Remote in Control Center"
-                        else listOfNotNull(
-                            "${state.entries.size} device${if (state.entries.size == 1) "" else "s"} shown",
-                            if (connected > 0) "$connected connected" else null,
-                            "PIN ${settings.iosPin}",
-                        ).joinToString(" · "),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Switch(checked = state.running, onCheckedChange = vm::setIosRemoteRunning)
-            }
-            if (state.running) (state.error ?: state.lastEvent)?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = if (state.error != null) cs.error else cs.onSecondaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ServerCard(vm: MainViewModel, server: ServerStatus, devices: List<SavedDevice>) {
+private fun ConnectionsCard(vm: MainViewModel, server: ServerStatus, devices: List<SavedDevice>) {
     val cs = MaterialTheme.colorScheme
     var showError by rememberSaveable { mutableStateOf(false) }
     var locationGranted by remember { mutableStateOf(vm.hasLocationPermission()) }
@@ -205,7 +169,7 @@ private fun ServerCard(vm: MainViewModel, server: ServerStatus, devices: List<Sa
                 Column(Modifier.weight(1f)) {
                     Text(
                         when { server.error != null -> "Needs attention"; server.running -> "Bridge online"; else -> "Bridge off" },
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
                         listOfNotNull(network ?: if (server.running) "No Wi-Fi" else null, if (settings.authMode.name == "PASSWORD") "Password on" else "Guest access").joinToString(" · "),
@@ -239,13 +203,45 @@ private fun ServerCard(vm: MainViewModel, server: ServerStatus, devices: List<Sa
                         }
                         androidx.compose.animation.AnimatedVisibility(showError) {
                             Text(
-                                "$err\n\nCheck Settings → Network: pick another port, or Automatic address and make sure Wi-Fi is on.",
+                                "$err\n\nCheck Settings → Web server: pick another port, or Automatic address and make sure Wi-Fi is on.",
                                 Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurface,
                             )
                         }
                     }
                 }
             }
+            HorizontalDivider(color = content.copy(alpha = 0.15f))
+            IosRemoteRow(vm, content)
+        }
+    }
+}
+
+/** The iPhone remote's on/off inside the connections card (every device shows up as an Apple TV in Control Center). */
+@Composable
+private fun IosRemoteRow(vm: MainViewModel, content: androidx.compose.ui.graphics.Color) {
+    val cs = MaterialTheme.colorScheme
+    val state by vm.iosState.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val connected = state.entries.count { it.connected }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            IconBadge(Icons.Rounded.PhoneIphone, size = 56.dp)
+            Column(Modifier.weight(1f)) {
+                Text(if (state.running) "iPhone remote on" else "iPhone remote off", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (!state.running) "Use the Apple TV Remote in Control Center"
+                    else listOfNotNull(
+                        "${state.entries.size} shown",
+                        if (connected > 0) "$connected connected" else null,
+                        "PIN ${settings.iosPin}",
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Switch(checked = state.running, onCheckedChange = vm::setIosRemoteRunning)
+        }
+        if (state.running) (state.error ?: state.lastEvent)?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = if (state.error != null) cs.error else content.copy(alpha = 0.75f), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -258,14 +254,14 @@ private fun FlowRowCompat(content: @Composable () -> Unit) =
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DeviceCard(vm: MainViewModel, device: SavedDevice, onLong: () -> Unit, modifier: Modifier = Modifier, dimmed: Boolean = false) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = LocalBeamHaptics.current
     val power = vm.buttonNames(device).firstOrNull { it.uppercase() in setOf("POWER", "POWER_TOGGLE", "POWER_ON") }
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = if (dimmed) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier.fillMaxWidth().clip(MaterialTheme.shapes.extraLarge).combinedClickable(
             onClick = { vm.open(device.id) },
-            onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onLong() },
+            onLongClick = { haptics.long(); onLong() },
         ),
     ) { Column {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -277,7 +273,7 @@ private fun DeviceCard(vm: MainViewModel, device: SavedDevice, onLong: () -> Uni
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (power != null && !dimmed) FilledTonalIconButton(onClick = { vm.press(device.id, power) }) { Icon(Icons.Rounded.PowerSettingsNew, "Power") }
+            if (power != null && !dimmed) FilledTonalIconButton(onClick = { haptics.key(); vm.press(device.id, power) }) { Icon(Icons.Rounded.PowerSettingsNew, "Power") }
         }
         val favs = device.favorites.filter { f -> vm.buttonNames(device).any { it.equals(f, true) } }
         if (favs.isNotEmpty() && !dimmed) Row(
@@ -285,7 +281,7 @@ private fun DeviceCard(vm: MainViewModel, device: SavedDevice, onLong: () -> Uni
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             favs.forEach { f ->
-                FilledTonalButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); vm.press(device.id, f) }, contentPadding = PaddingValues(horizontal = 14.dp)) {
+                FilledTonalButton(onClick = { haptics.key(); vm.press(device.id, f) }, contentPadding = PaddingValues(horizontal = 14.dp)) {
                     buttonIcon(f)?.let { Icon(it, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)) }
                     Text(prettyName(f), maxLines = 1)
                 }

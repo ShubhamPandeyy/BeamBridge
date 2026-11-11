@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
             }
             val showOverLock = prefs.lockScreen && route is Route.Device
             LaunchedEffect(showOverLock) { setOverLockScreen(showOverLock) }
-            BeamBridgeTheme(prefs.theme, prefs.darkMode) { App(vm) }
+            BeamBridgeTheme(prefs.theme, prefs.darkMode) { ProvideBeamHaptics(prefs.haptics) { App(vm) } }
         }
     }
 
@@ -93,7 +93,6 @@ private fun App(vm: MainViewModel) {
     val wizard by vm.wizard.collectAsStateWithLifecycle()
     val server by BridgeRuntime.status.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    var settingsOpen by remember { mutableStateOf(false) }
 
     val prefs by vm.settings.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
@@ -116,18 +115,18 @@ private fun App(vm: MainViewModel) {
     Box(Modifier.fillMaxSize()) {
         AnimatedContent(targetState = route, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "route") { r ->
             when (r) {
-                Route.Hub -> HubScreen(vm, devices, server, onSettings = { settingsOpen = true })
+                Route.Hub -> HubScreen(vm, devices, server, onSettings = { vm.openSettings() })
                 is Route.Device -> devices.firstOrNull { it.id == r.id }?.let { DeviceScreen(vm, it) } ?: LaunchedEffect(Unit) { vm.home() }
                 is Route.Finder -> devices.firstOrNull { it.id == r.deviceId }?.let { FinderScreen(vm, it) } ?: LaunchedEffect(Unit) { vm.home() }
                 Route.Wizard -> WizardScreen(vm, wizard)
                 Route.History -> HistoryScreen(vm)
                 Route.Scenes -> ScenesScreen(vm)
                 is Route.IosSetup -> devices.firstOrNull { it.id == r.deviceId }?.let { IosRemoteScreen(vm, it) } ?: LaunchedEffect(Unit) { vm.home() }
+                is Route.Settings -> SettingsScreen(vm, r.page)
                 is Route.SceneEdit -> SceneEditorScreen(vm, r.id?.let { id -> vm.scenes.value.firstOrNull { it.id == id } }, devices)
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 88.dp))
     }
 
-    if (settingsOpen) SettingsSheet(vm) { settingsOpen = false }
 }
