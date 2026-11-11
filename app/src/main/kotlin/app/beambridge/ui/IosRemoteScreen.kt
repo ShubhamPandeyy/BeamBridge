@@ -105,8 +105,8 @@ fun IosRemoteScreen(vm: MainViewModel, device: SavedDevice) {
 
     Scaffold(topBar = {
         TopAppBar(
-            title = { Column { Text("iPhone remote"); Text(device.name, style = MaterialTheme.typography.bodyMedium) } },
-            navigationIcon = { IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+            title = { Column(Modifier.padding(start = 4.dp)) { Text("iPhone remote", style = BeamType.screenTitle); Text(device.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+            navigationIcon = { FilledTonalIconButton(onClick = { vm.back() }, modifier = Modifier.padding(start = 8.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
         )
     }) { pad ->
         LazyColumn(
@@ -125,11 +125,15 @@ fun IosRemoteScreen(vm: MainViewModel, device: SavedDevice) {
                     onSkip = { customFor = null; vm.iosRemote.clearLearned() },
                 )
             }
-            item {
-                GridRemote(
-                    grid, layout, swipe = false, editing = false, feedback = null,
-                    press = ::bind, long = ::bind, onEditStart = {}, onMove = { _, _, _, _, _ -> }, badges = badges,
-                )
+            if (grid.tiles.isNotEmpty()) item {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(28.dp)) {
+                    Box(Modifier.padding(10.dp)) {
+                        GridRemote(
+                            grid, layout, swipe = false, editing = false, feedback = null,
+                            press = ::bind, long = ::bind, onEditStart = {}, onMove = { _, _, _, _, _ -> }, badges = badges,
+                        )
+                    }
+                }
             }
             if (more.isNotEmpty()) item {
                 MenuGroup(if (grid.tiles.isEmpty()) "Keys" else "More keys") {
@@ -193,10 +197,12 @@ private fun ListenBanner(
     ) {
         AnimatedContent(caught, label = "listen") { g ->
             if (g == null) Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(0.35f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "a")
-                Icon(Icons.Rounded.TouchApp, null, Modifier.size(32.dp).alpha(if (listening) pulse else 0.35f))
+                // Expressive loading indicator (morphing shapes) while listening; a dimmed hand when not.
+                Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                    if (listening) ListeningIndicator() else Icon(Icons.Rounded.TouchApp, null, Modifier.size(28.dp).alpha(0.4f))
+                }
                 Column {
-                    Text(if (listening) "Listening…" else "Not listening", style = MaterialTheme.typography.titleMedium)
+                    Text(if (listening) "Listening…" else "Not listening", style = BeamType.cardTitle)
                     Text(
                         when {
                             !listening -> "Turn on the iPhone remote and show this device first."
@@ -208,11 +214,11 @@ private fun ListenBanner(
                 }
             } else Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(Modifier.size(44.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(52.dp).clip(BeamShapes.iphone).background(cs.primary), contentAlignment = Alignment.Center) {
                         Icon(gestureIcon(g), null, tint = cs.onPrimary)
                     }
                     Column(Modifier.weight(1f)) {
-                        Text(IosGesture.label(g), style = MaterialTheme.typography.titleMedium, color = cs.onPrimaryContainer)
+                        Text(IosGesture.label(g), style = BeamType.cardTitle, color = cs.onPrimaryContainer)
                         Text(
                             (current?.let { "Now presses ${prettyName(it)}. " } ?: "") + "Tap a key below to bind it.",
                             style = MaterialTheme.typography.bodySmall, color = cs.onPrimaryContainer,
@@ -233,13 +239,13 @@ private fun ListenBanner(
 @Composable
 private fun ConnectCard(vm: MainViewModel, device: SavedDevice, running: Boolean, shown: Boolean, connected: Boolean, pin: String, hidden: Boolean) {
     val cs = MaterialTheme.colorScheme
-    ElevatedCard(shape = MaterialTheme.shapes.extraLarge) {
+    Card(shape = RoundedCornerShape(32.dp), colors = CardDefaults.cardColors(containerColor = cs.surfaceContainer)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                IconBadge(Icons.Rounded.PhoneIphone)
+                IconBadge(Icons.Rounded.PhoneIphone, shape = BeamShapes.iphone, container = cs.primary, content = cs.onPrimary)
                 Text(
                     when { !running -> "iPhone remote is off"; !shown -> "Not shown to the iPhone"; connected -> "iPhone connected"; else -> "Ready to pair" },
-                    style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f),
+                    style = BeamType.cardTitle, modifier = Modifier.weight(1f),
                 )
             }
             when {
@@ -302,3 +308,7 @@ private fun gestureIcon(g: String) = when {
     g == "ios_back" -> Icons.AutoMirrored.Rounded.Undo
     else -> Icons.Rounded.RadioButtonChecked
 }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ListeningIndicator() = LoadingIndicator(Modifier.size(44.dp))

@@ -30,8 +30,8 @@ fun FinderScreen(vm: MainViewModel, device: SavedDevice) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("TV finder") },
-                navigationIcon = { IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+                title = { Text("TV finder", style = BeamType.screenTitle, modifier = Modifier.padding(start = 4.dp)) },
+                navigationIcon = { FilledTonalIconButton(onClick = { vm.back() }, modifier = Modifier.padding(start = 8.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
             )
         },
     ) { pad ->

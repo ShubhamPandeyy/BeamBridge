@@ -24,7 +24,7 @@ Pair your TV, AC or set-top box once. Control it from the app, a web dashboard, 
 ### 🎛️ A remote that feels like a remote
 - **TV layout out of the box:** mute and power, a big D-pad, volume bar, back / settings / home. It fits one screen with no scrolling.
 - **Your keys, your layout:** long-press empty space to edit. Drag keys like app icons, drag the corner to resize them, on a **5 × 8 grid** you can change (3–6 columns, 4–16 rows).
-- **Add only what you need:** everything else the remote supports lives in ⋮ → *Add keys to screen*.
+- **Add only what you need:** everything else the remote supports is one tap away under the **+** on the remote's bottom toolbar.
 - **Swipe D-pad** (swipe for arrows, tap for OK), **favourites** on the home card, haptic and visual send confirmation.
 - **Phone volume keys** control the open remote. Press both together to toggle power.
 - **Over the lock screen** (on by default; Settings → Remote → *Show remote on lock screen*): open a remote, lock the phone, press power, and it's still there. So you don't have to unlock the phone to change the channel.
@@ -40,7 +40,7 @@ Pair your TV, AC or set-top box once. Control it from the app, a web dashboard, 
 
 ### 📱 iPhone remote (Apple TV Remote → IR)
 - Every device shows up as its **own Apple TV** in the iPhone's Control Center remote: pick *TCL TV* or *Bedroom AC* at the top and control it.
-- **You choose what each gesture does.** On a device's remote: ⋮ → *Set up iPhone remote*. The screen listens, you swipe or press on the iPhone, then pick the button it should send. Swipe up and the Up arrow are separate gestures, so they can send different buttons.
+- **You choose what each gesture does.** On a device's remote, tap the iPhone button on the bottom toolbar. The screen shows that remote and listens; swipe or press on the iPhone, then tap the key it should press. Swipe up and the Up arrow are separate gestures, so they can send different buttons.
 - Pairs with a **4-digit PIN** you set (Settings → *iPhone remote*). By default only paired iPhones can connect; *Forget all* locks them out again.
 - Its own **on/off switch** on the home screen, next to the server. Works without the web server and without any app on the iPhone.
 
@@ -56,8 +56,10 @@ Pair your TV, AC or set-top box once. Control it from the app, a web dashboard, 
 - **Command history:** time, device, key, source (app, web, API, scene) and whether the transmitter accepted it.
 - Optional silent notification: *"Power on beamed to Living room TV"*.
 
-### 🎨 Material 3 design
-- Follows your wallpaper colours (Material You) or six preset palettes, light / dark / auto, expressive shapes and spring motion.
+### 🎨 Material 3 Expressive design
+- BeamBridge's own teal and coral palette by default, or your wallpaper colours (Material You) and six presets; light / dark / auto.
+- Identity shapes: a scalloped "cookie" Power and OK key, and a badge shape per device type. Keys squash and spring back when pressed.
+- Roboto Flex type with wide, heavy titles. Remote actions sit on a floating toolbar at the bottom, within thumb reach.
 
 ---
 
@@ -91,7 +93,7 @@ flowchart LR
 ## 🚀 Quick start
 
 1. **Build or download the APK** (see [Build](#-build)) and install it on a phone that has an IR blaster.
-2. Open BeamBridge, go through the 3-screen intro, then **Add device**.
+2. Open BeamBridge, go through the 3-screen intro, then **Add**.
 3. Turn on the bridge from the home screen. It shows the address, for example `http://192.168.1.50:8080`. Tap the copy button.
 4. Open that address in any browser on the same Wi-Fi, or call a key's URL:
 
@@ -105,7 +107,7 @@ curl -X POST "http://192.168.1.50:8080/api/blast?device=living_room_tv&button=PO
 
 1. Home screen → turn on **iPhone remote**. Note the PIN on the card (change it in Settings).
 2. On the iPhone (same Wi-Fi): Control Center → **Apple TV Remote** → pick your device at the top → enter the PIN. *(No remote icon? iPhone Settings → Control Center → add Apple TV Remote.)*
-3. In BeamBridge open that device → ⋮ → **Set up iPhone remote**. The device's remote is shown. Swipe or press on the iPhone, then tap the key it should press (or **Custom IR key** for a new one). Repeat for each gesture you want.
+3. In BeamBridge open that device → the **iPhone** button on the bottom toolbar. The device's remote is shown. Swipe or press on the iPhone, then tap the key it should press (or **Custom IR key** for a new one). Repeat for each gesture you want.
 4. Leave the setup screen. Gestures now send IR.
 
 ### Permissions, and why
@@ -177,7 +179,7 @@ The APK lands in `app/build/outputs/apk/debug/`. The GitHub Actions workflow in 
 | | |
 |---|---|
 | Kotlin / AGP / Gradle | 2.2 / 8.11 / 8.14 |
-| Compose BOM / Material 3 | 2025.09 / 1.4 |
+| Compose BOM / Material 3 | 2025.09 / 1.4 (Expressive) |
 | compileSdk / minSdk | 36 / 26 |
 | Server | NanoHTTPD 2.3.1, kotlinx.serialization |
 | iPhone remote crypto | BouncyCastle 1.81 (pure Java) |
@@ -239,7 +241,7 @@ GitHub Actions (`.github/workflows/android.yml`) runs the tests and builds the A
 | iPhone doesn't list the device in Apple TV Remote | iPhone remote switch on? Same Wi-Fi (not guest, no "AP/client isolation")? Device not archived or hidden (Settings → *iPhone remote*)? Turning Wi-Fi off/on on the phone running BeamBridge re-announces it. |
 | iPhone says the PIN is wrong | Use the PIN on the home card / Settings. Changing the PIN only affects new pairings. |
 | iPhone was paired but now won't connect | It was forgotten (Settings → iPhone remote → *Forget all*) or this device's data was reset: on the iPhone, pick the device again and enter the PIN. If it still fails after an iOS update, try turning off *Only paired iPhones*. |
-| A gesture does nothing | It isn't set up for that device (the setup screen lists saved gestures). ⋮ → *Set up iPhone remote*. A tap and a click are different gestures (*Tap* vs *Select*). |
+| A gesture does nothing | It isn't set up for that device (the setup screen lists saved gestures). Open the device → iPhone button on the bottom toolbar. A tap and a click are different gestures (*Tap* vs *Select*). |
 | AC shows a different state than reality | IR is one-way. Set the AC once with its real remote, or send the state again. |
 
 ---

@@ -33,8 +33,8 @@ fun SettingsScreen(vm: MainViewModel, page: SettingsPage) {
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text(page.title) },
-                navigationIcon = { IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+                title = { Text(page.title, style = if (scroll.state.collapsedFraction < 0.5f) BeamType.hero else BeamType.screenTitle) },
+                navigationIcon = { FilledTonalIconButton(onClick = { vm.back() }, modifier = Modifier.padding(start = 8.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
                 scrollBehavior = scroll,
             )
         },
@@ -68,8 +68,23 @@ private fun SettingsRoot(vm: MainViewModel) {
         MenuRow(Icons.Rounded.Dns, "Web server", "Port ${s.port} · ${if (s.authMode == AuthMode.PASSWORD) "password" else "open"}", chevron = true) { vm.openSettings(SettingsPage.Server) }
     }
     MenuGroup("BeamBridge") {
-        MenuRow(Icons.Rounded.Coffee, "Buy me a coffee", "Say hi to the developer") { vm.buyMeCoffee() }
+        CoffeeRow { vm.buyMeCoffee() }
         MenuRow(Icons.Rounded.Info, "About", "Version, licence, source code", chevron = true) { vm.openSettings(SettingsPage.About) }
+    }
+}
+
+/** "Buy me a coffee": the one coloured row in Settings, with a cookie-shaped badge. */
+@Composable
+private fun CoffeeRow(onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Surface(onClick = onClick, color = cs.tertiaryContainer, contentColor = cs.onTertiaryContainer, shape = RoundedCornerShape(6.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            IconBadge(Icons.Rounded.Coffee, size = 44.dp, shape = BeamShapes.coffee, container = cs.tertiary, content = cs.onTertiary)
+            Column {
+                Text("Buy me a coffee", style = BeamType.cardTitle)
+                Text("Say hi to the developer", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
     }
 }
 
@@ -220,7 +235,7 @@ private fun AboutPage(vm: MainViewModel) {
         MenuRow(Icons.Rounded.Info, "BeamBridge", "Version $version")
         MenuRow(Icons.Rounded.Code, "Source code", "github.com/ShubhamPandeyy/BeamBridge", chevron = true) { open(MainViewModel.GITHUB_URL) }
         MenuRow(Icons.Rounded.Gavel, "Licence", "MIT. Third-party notices are in the repository.", chevron = true) { open(MainViewModel.GITHUB_URL + "/blob/main/LICENSE") }
-        MenuRow(Icons.Rounded.Coffee, "Buy me a coffee", "Say hi to the developer") { vm.buyMeCoffee() }
+        CoffeeRow { vm.buyMeCoffee() }
     }
 }
 

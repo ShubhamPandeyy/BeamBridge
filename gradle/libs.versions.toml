@@ -12,6 +12,8 @@ composeBom = "2025.09.00"
 # Material 3 Expressive (MaterialExpressiveTheme, expressive motion scheme) ships in 1.4.0.
 material3 = "1.4.0"
 activityCompose = "1.11.0"
+# Shape morphing / MaterialShapes polygons used by the Expressive components.
+graphicsShapes = "1.0.1"
 lifecycle = "2.9.4"
 coreKtx = "1.17.0"
 
@@ -33,6 +35,7 @@ androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 androidx-compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
+androidx-graphics-shapes = { module = "androidx.graphics:graphics-shapes", version.ref = "graphicsShapes" }
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 
 [plugins]

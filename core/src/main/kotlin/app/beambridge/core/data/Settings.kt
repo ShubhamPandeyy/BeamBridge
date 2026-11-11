@@ -34,7 +34,9 @@ data class BridgeSettings(
     val autoStart: Boolean = false,
     // ---- app-only preferences (not exposed to the web UI) ----
     /** "system" = Material You wallpaper colours (Android 12+), otherwise a preset palette name, see the app's Theme.kt. */
-    val theme: String = "system",
+    val theme: String = "beam",
+    /** One-time switch to the 1.9 BeamBridge palette for people still on the old "system" default. */
+    val themeMigrated19: Boolean = false,
     /** "auto" | "light" | "dark" */
     val darkMode: String = "auto",
     /** Show an open remote over the lock screen. */

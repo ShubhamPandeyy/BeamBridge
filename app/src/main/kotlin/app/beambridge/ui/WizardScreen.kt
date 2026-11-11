@@ -1,5 +1,6 @@
 package app.beambridge.ui
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -46,9 +47,9 @@ fun WizardScreen(vm: MainViewModel, w: WizardState) {
                         WizardStep.Power -> "Is it on right now?"
                         WizardStep.Test -> "Test codes"
                         WizardStep.Name -> "Name it"
-                    })
+                    }, style = BeamType.screenTitle, modifier = Modifier.padding(start = 4.dp))
                 },
-                navigationIcon = { IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+                navigationIcon = { FilledTonalIconButton(onClick = { vm.back() }, modifier = Modifier.padding(start = 8.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
             )
         },
     ) { pad ->
@@ -90,7 +91,7 @@ private fun TypeStep(vm: MainViewModel) {
 /** Standard-height selectable row used across the wizard. */
 @Composable
 private fun OptionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String?, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             IconBadge(icon, size = 44.dp)
             Column(Modifier.weight(1f)) {

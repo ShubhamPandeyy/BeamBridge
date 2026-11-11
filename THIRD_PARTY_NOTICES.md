@@ -10,5 +10,10 @@ Cargo.toml and README; the repository has no separate LICENSE file). atv-core is
 Ed25519, X25519, ChaCha20-Poly1305 and HKDF come from `org.bouncycastle:bcprov-jdk18on`
 (Bouncy Castle License, an MIT-style license, https://www.bouncycastle.org/licence.html).
 
+## Roboto Flex (SIL Open Font License 1.1)
+`app/src/main/res/font/roboto_flex.ttf` is the Latin subset of Roboto Flex by Font Bureau and Google
+(https://github.com/googlefonts/roboto-flex), licensed under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org).
+
 ## Other dependencies
 NanoHTTPD (BSD-3-Clause), kotlinx.coroutines / kotlinx.serialization / Kotlin (Apache-2.0), AndroidX and Jetpack Compose (Apache-2.0).

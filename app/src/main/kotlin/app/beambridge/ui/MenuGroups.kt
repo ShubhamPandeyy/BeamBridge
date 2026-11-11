@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
 fun MenuGroup(title: String?, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier.fillMaxWidth()) {
         if (title != null) Text(
-            title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+            title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(start = 20.dp, bottom = 8.dp),
         )
         Column(Modifier.clip(RoundedCornerShape(28.dp)), verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
@@ -55,7 +55,7 @@ fun MenuRow(
             }
         },
         trailingContent = trailing ?: if (chevron) ChevronTrailing else null,
-        colors = ListItemDefaults.colors(containerColor = cs.surfaceContainerHigh),
+        colors = ListItemDefaults.colors(containerColor = cs.surfaceContainer),
         modifier = Modifier.clip(RoundedCornerShape(6.dp))
             .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier),
     )

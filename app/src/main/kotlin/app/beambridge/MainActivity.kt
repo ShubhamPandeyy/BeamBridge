@@ -43,6 +43,9 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(prefs.lockScreenMigrated) {
                 if (!prefs.lockScreenMigrated) vm.updatePrefs { it.copy(lockScreen = true, lockScreenMigrated = true) }
             }
+            LaunchedEffect(prefs.themeMigrated19) {
+                if (!prefs.themeMigrated19) vm.updatePrefs { it.copy(theme = if (it.theme == "system") "beam" else it.theme, themeMigrated19 = true) }
+            }
             val showOverLock = prefs.lockScreen && route is Route.Device
             LaunchedEffect(showOverLock) { setOverLockScreen(showOverLock) }
             BeamBridgeTheme(prefs.theme, prefs.darkMode) { ProvideBeamHaptics(prefs.haptics) { App(vm) } }

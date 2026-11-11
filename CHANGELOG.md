@@ -2,6 +2,17 @@
 
 The section matching the current `baseVersion` is placed at the top of each GitHub Release's notes; the commit list is appended automatically (see `.github/workflows/android.yml`).
 
+## 1.9
+
+**Material 3 Expressive redesign.**
+- New BeamBridge palette (teal with a coral accent) is the default. Material You and the other presets are still in Settings → Look & feel.
+- Roboto Flex font with wide, heavy titles (bundled, works offline).
+- Expressive shapes: Power and OK are scalloped "cookie" keys, and every device type has its own badge shape.
+- Springier motion: keys squash and bounce back, menus and screens use the expressive motion scheme, and listening shows a shape-morphing indicator.
+- Home: device tiles in a two-column grid with a quick Power button, scenes as one connected button row, a bigger Add button.
+- Remote: Edit, iPhone setup, More and + moved to a floating toolbar at the bottom. In edit mode it turns into grid size, Reset and Done.
+- Settings, menus and sheets use grouped, rounded rows. Buy me a coffee has its own colourful row.
+
 ## 1.8
 
 - **iPhone remote is steadier:** it no longer re-announces itself every time Android reports a network change (that caused the jerky reconnects), only when the phone's address really changes. First pairing answers faster.

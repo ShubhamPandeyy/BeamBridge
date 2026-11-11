@@ -1,5 +1,6 @@
 package app.beambridge.ui
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -47,7 +48,7 @@ fun AcPanel(vm: MainViewModel, device: SavedDevice) {
         if (target != state.temperature) vm.setAcTemperature(device.id, target)
     }
 
-    ElevatedCard(shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.fillMaxWidth()) {
+    Card(shape = RoundedCornerShape(32.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             val frac by animateFloatAsState((preview - range.first) / (range.last - range.first).coerceAtLeast(1).toFloat(), label = "dial")
             Box(Modifier.size(220.dp), contentAlignment = Alignment.Center) {

@@ -5,6 +5,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -95,36 +96,30 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(if (editing) "Edit layout" else device.name, maxLines = 1)
+                    Column(Modifier.padding(start = 4.dp)) {
+                        Text(if (editing) "Edit layout" else device.name, style = BeamType.screenTitle, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         SendStatus(feedback)
                     }
                 },
                 navigationIcon = {
-                    if (editing) IconButton(onClick = { editing = false }) { Icon(Icons.Rounded.Close, "Stop editing") }
-                    else IconButton(onClick = vm::home) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                    FilledTonalIconButton(onClick = { if (editing) editing = false else vm.home() }, modifier = Modifier.padding(start = 8.dp)) {
+                        if (editing) Icon(Icons.Rounded.Close, "Stop editing") else Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                    }
                 },
                 actions = {
-                    if (editing) {
-                        TextButton(onClick = { sheet = Sheet.GridSize }) { Text("${grid.cols}×${grid.rows}") }
-                        TextButton(onClick = { vm.resetGrid(device.id) }) { Text("Reset") }
-                        Button(onClick = { editing = false }, Modifier.padding(end = 8.dp)) { Text("Done") }
-                        return@TopAppBar
-                    }
-                    if (locked) { Icon(Icons.Rounded.Lock, "Locked: unlock to edit", Modifier.padding(end = 16.dp)); return@TopAppBar }
-                    IconButton(onClick = { sheet = Sheet.AddKeys }) { Icon(Icons.Rounded.Add, "Add keys") }
-                    IconButton(onClick = { sheet = Sheet.Menu }) { Icon(Icons.Rounded.MoreVert, "More") }
+                    if (locked && !editing) Icon(Icons.Rounded.Lock, "Locked: unlock to edit", Modifier.padding(end = 16.dp))
                 },
             )
         },
     ) { pad ->
+      Box(Modifier.padding(pad).fillMaxSize()) {
         Column(
-            Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 112.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (!prefs.tipLongPress && !editing) TipCard { vm.updatePrefs { it.copy(tipLongPress = true) } }
             if (editing) Text(
-                "Keys are lifted: drag one to move it, drag its corner handle to resize. Keys can't overlap.",
+                "Drag a key to move it, drag its corner to resize. Keys can't overlap.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (device.type == DeviceType.AC && !editing) AcPanel(vm, device)
@@ -135,9 +130,17 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
                 onMove = { t, c, r, w, h -> vm.moveTile(device.id, t.id, c, r, w, h) },
             )
             if (device.buttons.isEmpty() && device.type != DeviceType.AC) {
-                Text("No keys yet. Tap + to add one with an IR code, or use the TV finder.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("No keys yet. Tap + below to add one with an IR code, or use Find a code in the ⋮ menu.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        if (!locked || editing) RemoteToolbar(
+            editing = editing, gridLabel = "${grid.cols} × ${grid.rows}",
+            onEdit = { haptics.long(); editing = true }, onIphone = { vm.openIosSetup(device.id) },
+            onMore = { sheet = Sheet.Menu }, onAdd = { sheet = Sheet.AddKeys },
+            onGrid = { sheet = Sheet.GridSize }, onReset = { vm.resetGrid(device.id) }, onDone = { editing = false },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
+        )
+      }
     }
 
     when (val s = sheet) {
@@ -148,12 +151,49 @@ fun DeviceScreen(vm: MainViewModel, device: SavedDevice) {
         Sheet.AddKeys -> AddKeysSheet(vm, device, layout, onCustom = { sheet = Sheet.Edit(null) }) { sheet = null }
         Sheet.Menu -> DeviceMenuSheet(
             vm, device, layout.hasDpad, onDismiss = { sheet = null },
-            onEditLayout = { sheet = null; editing = true }, onHidden = { sheet = Sheet.Hidden },
+            onHidden = { sheet = Sheet.Hidden },
             onRename = { sheet = Sheet.Rename }, onDelete = { sheet = Sheet.Delete },
         )
         Sheet.Rename -> RenameDialog(device.name, onDismiss = { sheet = null }) { vm.rename(device.id, it); sheet = null }
         Sheet.Delete -> ConfirmDelete(device.name, onDismiss = { sheet = null }) { sheet = null; vm.delete(device.id) }
         Sheet.GridSize -> GridSizeDialog(grid.cols, device.gridRows, onDismiss = { sheet = null }) { c, r -> vm.setGridSize(device.id, c, r); sheet = null }
+    }
+}
+
+/**
+ * Floating toolbar at the bottom of a remote (M3 Expressive): Edit, iPhone remote, More, and the primary + action.
+ * In edit mode it morphs into grid size, Reset and Done.
+ */
+@Composable
+private fun RemoteToolbar(
+    editing: Boolean, gridLabel: String,
+    onEdit: () -> Unit, onIphone: () -> Unit, onMore: () -> Unit, onAdd: () -> Unit,
+    onGrid: () -> Unit, onReset: () -> Unit, onDone: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    Surface(modifier, shape = RoundedCornerShape(32.dp), color = cs.surfaceContainerHighest, shadowElevation = 8.dp, tonalElevation = 2.dp) {
+        androidx.compose.animation.AnimatedContent(
+            editing, label = "toolbar",
+            transitionSpec = { (fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.9f)) togetherWith fadeOut() using androidx.compose.animation.SizeTransform(clip = false) },
+        ) { edit ->
+            Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (edit) {
+                    TextButton(onClick = onGrid, modifier = Modifier.height(48.dp)) { Icon(Icons.Rounded.GridView, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp)); Text(gridLabel) }
+                    TextButton(onClick = onReset, modifier = Modifier.height(48.dp)) { Text("Reset") }
+                    Button(onClick = onDone, shape = RoundedCornerShape(18.dp), modifier = Modifier.height(56.dp), contentPadding = PaddingValues(horizontal = 22.dp)) {
+                        Icon(Icons.Rounded.Check, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp)); Text("Done", style = MaterialTheme.typography.titleMedium)
+                    }
+                } else {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(48.dp)) { Icon(Icons.Rounded.Edit, "Edit layout") }
+                    IconButton(onClick = onIphone, modifier = Modifier.size(48.dp)) { Icon(Icons.Rounded.PhoneIphone, "iPhone remote setup") }
+                    IconButton(onClick = onMore, modifier = Modifier.size(48.dp)) { Icon(Icons.Rounded.MoreVert, "More") }
+                    Surface(onClick = onAdd, shape = RoundedCornerShape(18.dp), color = cs.primary, contentColor = cs.onPrimary, modifier = Modifier.padding(start = 4.dp).size(56.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Add, "Add key", Modifier.size(26.dp)) }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -289,8 +329,9 @@ private fun TileContent(t: Tile, l: RemoteLayout, swipe: Boolean, editing: Boole
             val power = t.id.uppercase().startsWith("POWER")
             TileKey(
                 t.id, f, p, lp, round = t.w == t.h,
-                container = if (power) cs.errorContainer else cs.secondaryContainer,
-                content = if (power) cs.onErrorContainer else cs.onSecondaryContainer,
+                container = if (power) cs.tertiaryContainer else cs.surfaceContainerHigh,
+                content = if (power) cs.onTertiaryContainer else cs.onSurface,
+                shape = if (power && t.w == t.h) BeamShapes.power else null,
                 icon = if (t.id.uppercase() in setOf("SETTINGS", "MENU", "OPTIONS", "TOOLS", "TCL_SETTINGS")) Icons.Rounded.Settings else buttonIcon(t.id),
                 showLabel = t.w > 1, badge = badges[t.id] ?: 0,
             )
@@ -314,20 +355,23 @@ private fun BoxScope.CountBadge(count: Int) {
 private fun TileKey(
     name: String, f: SendFeedback?, press: (String) -> Unit, long: (String) -> Unit, round: Boolean,
     container: Color, content: Color, icon: androidx.compose.ui.graphics.vector.ImageVector?, showLabel: Boolean,
-    modifier: Modifier = Modifier, badge: Int = 0,
+    modifier: Modifier = Modifier, badge: Int = 0, shape: androidx.compose.ui.graphics.Shape? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val corner by animateDpAsState(if (pressed) 14.dp else if (round) 100.dp else 24.dp, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "corner")
+    // Expressive press: corners tighten and the key squashes a little, then springs back.
+    val corner by animateDpAsState(if (pressed) 14.dp else if (round) 100.dp else 28.dp, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "corner")
+    val squash by animateFloatAsState(if (pressed) 0.94f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "squash")
+    val keyShape = shape ?: RoundedCornerShape(corner)
     val mine = f?.key.equals(name, true)
     val ring by animateColorAsState(
         when { !mine -> Color.Transparent; f?.state == SendFeedback.State.FAILED -> cs.error; f?.state == SendFeedback.State.SENT -> cs.primary; else -> cs.outline },
         label = "ring",
     )
     Box(
-        modifier.fillMaxSize().clip(RoundedCornerShape(corner)).background(container)
-            .border(3.dp, ring, RoundedCornerShape(corner))
+        modifier.fillMaxSize().graphicsLayer { scaleX = squash; scaleY = squash }.clip(keyShape).background(container)
+            .border(3.dp, ring, keyShape)
             .combinedClickable(interactionSource = source, indication = ripple(), onClick = { press(name) }, onLongClick = { long(name) }, onClickLabel = prettyName(name)),
         contentAlignment = Alignment.Center,
     ) {
@@ -366,7 +410,7 @@ private fun Dpad(l: RemoteLayout, d: Dp, f: SendFeedback?, press: (String) -> Un
     }
 
     Box(
-        Modifier.size(d).clip(CircleShape).background(cs.primaryContainer.copy(alpha = 0.55f)).border(2.dp, cs.primaryContainer, CircleShape)
+        Modifier.size(d).clip(CircleShape).background(cs.primaryContainer)
             .then(if (enabled) Modifier.pointerInput(l) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -411,8 +455,8 @@ private fun Dpad(l: RemoteLayout, d: Dp, f: SendFeedback?, press: (String) -> Un
         arrow(l.up, Alignment.TopCenter); arrow(l.down, Alignment.BottomCenter)
         arrow(l.left, Alignment.CenterStart); arrow(l.right, Alignment.CenterEnd)
         l.ok?.let {
-            Box(Modifier.align(Alignment.Center).size(d * 0.38f)) {
-                DpadKey(it, hover == it, f, container = cs.primary, content = cs.onPrimary, icon = null, badge = badges[it] ?: 0, press = press)
+            Box(Modifier.align(Alignment.Center).size(d * 0.4f)) {
+                DpadKey(it, hover == it, f, container = cs.primary, content = cs.onPrimary, icon = null, badge = badges[it] ?: 0, press = press, shape = BeamShapes.ok)
             }
         }
     }
@@ -420,7 +464,7 @@ private fun Dpad(l: RemoteLayout, d: Dp, f: SendFeedback?, press: (String) -> Un
 
 /** A D-pad key's look only; the pad itself handles touches (so a finger can slide between keys). */
 @Composable
-private fun DpadKey(name: String, hovered: Boolean, f: SendFeedback?, container: Color, content: Color, icon: androidx.compose.ui.graphics.vector.ImageVector?, badge: Int, press: (String) -> Unit) {
+private fun DpadKey(name: String, hovered: Boolean, f: SendFeedback?, container: Color, content: Color, icon: androidx.compose.ui.graphics.vector.ImageVector?, badge: Int, press: (String) -> Unit, shape: androidx.compose.ui.graphics.Shape = CircleShape) {
     val cs = MaterialTheme.colorScheme
     val mine = f?.key.equals(name, true)
     val ring by animateColorAsState(
@@ -428,14 +472,16 @@ private fun DpadKey(name: String, hovered: Boolean, f: SendFeedback?, container:
         label = "ring",
     )
     val scale by animateFloatAsState(if (hovered) 0.9f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "press")
-    val fill = if (hovered) (if (container == Color.Transparent) cs.primary.copy(alpha = 0.22f) else cs.primary.copy(alpha = 0.85f)) else container
+    val arrow = container == Color.Transparent
+    val fill by animateColorAsState(if (hovered) (if (arrow) cs.primary else cs.onPrimaryContainer) else container, label = "fill")
+    val tint = if (hovered && arrow) cs.onPrimary else if (hovered) cs.primaryContainer else content
     Box(
-        Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(fill).border(3.dp, ring, CircleShape)
+        Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale }.clip(shape).background(fill).border(3.dp, ring, shape)
             .semantics { role = Role.Button; contentDescription = prettyName(name); onClick { press(name); true } },
         contentAlignment = Alignment.Center,
     ) {
-        if (icon != null) Icon(icon, null, Modifier.size(26.dp), tint = content)
-        else Text(shortLabel(name), color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        if (icon != null) Icon(icon, null, Modifier.size(30.dp), tint = tint)
+        else Text(shortLabel(name), color = tint, style = BeamType.key, maxLines = 1)
         CountBadge(badge)
     }
 }
@@ -576,25 +622,23 @@ private fun AddKeysSheet(vm: MainViewModel, device: SavedDevice, layout: RemoteL
 @Composable
 private fun DeviceMenuSheet(
     vm: MainViewModel, device: SavedDevice, hasDpad: Boolean, onDismiss: () -> Unit,
-    onEditLayout: () -> Unit, onHidden: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit,
+    onHidden: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                IconBadge(deviceIcon(device.type))
+                DeviceBadge(device.type)
                 Column {
-                    Text(device.name, style = MaterialTheme.typography.titleLarge, maxLines = 1)
+                    Text(device.name, style = BeamType.screenTitle, maxLines = 1)
                     Text("${device.buttons.size} keys", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            MenuGroup("Remote") {
-                MenuRow(Icons.Rounded.Dashboard, "Edit layout", "Move and resize keys", chevron = true, onClick = onEditLayout)
+            // Edit layout and iPhone setup live on the floating toolbar; no duplicates here.
+            if (hasDpad || device.hidden.isNotEmpty()) MenuGroup("Remote") {
                 if (hasDpad) MenuSwitchRow(Icons.Rounded.Swipe, "Swipe D-pad", "Touchpad instead of arrow keys", device.swipeDpad) { vm.setSwipe(device.id, it) }
                 if (device.hidden.isNotEmpty()) MenuRow(Icons.Rounded.VisibilityOff, "Hidden keys", "${device.hidden.size} hidden", chevron = true, onClick = onHidden)
             }
-            MenuGroup("iPhone & codes") {
-                val n = device.iosGestures.size
-                MenuRow(Icons.Rounded.PhoneIphone, "Set up iPhone remote", if (n == 0) "Bind iPhone gestures to keys" else "$n gesture${if (n == 1) "" else "s"} bound", chevron = true) { onDismiss(); vm.openIosSetup(device.id) }
+            MenuGroup("Codes") {
                 MenuRow(Icons.Rounded.TravelExplore, "Find a code", "Try code sets until one works", chevron = true) { onDismiss(); vm.openFinder(device.id) }
             }
             MenuGroup("Device") {

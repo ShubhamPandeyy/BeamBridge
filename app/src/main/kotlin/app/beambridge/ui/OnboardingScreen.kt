@@ -72,7 +72,7 @@ fun OnboardingScreen(vm: MainViewModel) {
                 if (i < INTRO.size) {
                     val p = INTRO[i]
                     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                        IconBadge(p.icon, size = 120.dp)
+                        IconBadge(p.icon, size = 144.dp, shape = BeamShapes.scene)
                         Spacer(Modifier.height(32.dp))
                         Text(p.title, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
                         Spacer(Modifier.height(12.dp))

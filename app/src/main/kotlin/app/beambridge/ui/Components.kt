@@ -19,7 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -94,15 +98,52 @@ fun StatusPill(text: String, good: Boolean, modifier: Modifier = Modifier) {
     }
 }
 
-/** Icon in a soft tonal blob. */
+/** Icon in a soft tonal blob. Pass an expressive [shape] (see [BeamShapes]) for identity badges. */
 @Composable
-fun IconBadge(icon: ImageVector, size: Dp = 48.dp, modifier: Modifier = Modifier) {
-    Box(
-        modifier.size(size).clip(RoundedCornerShape(size * 0.36f)).background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, null, Modifier.size(size * 0.5f), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+fun IconBadge(
+    icon: ImageVector, size: Dp = 48.dp, modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(size * 0.36f),
+    container: Color = MaterialTheme.colorScheme.primaryContainer,
+    content: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+) {
+    Box(modifier.size(size).clip(shape).background(container), contentAlignment = Alignment.Center) {
+        Icon(icon, null, Modifier.size(size * 0.46f), tint = content)
     }
+}
+
+/**
+ * Material 3 Expressive identity shapes (MaterialShapes polygons). Power and OK are scalloped cookies; each device
+ * type has its own badge shape, so a device is recognisable before its name is read.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+object BeamShapes {
+    val power: Shape @Composable get() = MaterialShapes.Cookie9Sided.toShape()
+    val ok: Shape @Composable get() = MaterialShapes.Cookie9Sided.toShape()
+    val iphone: Shape @Composable get() = MaterialShapes.Sunny.toShape()
+    val bridge: Shape @Composable get() = MaterialShapes.Sunny.toShape()
+    val scene: Shape @Composable get() = MaterialShapes.SoftBurst.toShape()
+    val coffee: Shape @Composable get() = MaterialShapes.Cookie9Sided.toShape()
+
+    @Composable
+    fun device(type: DeviceType): Shape = when (type) {
+        DeviceType.TV -> MaterialShapes.Clover4Leaf.toShape()
+        DeviceType.AC -> MaterialShapes.Cookie4Sided.toShape()
+        DeviceType.SET_TOP_BOX -> MaterialShapes.SoftBurst.toShape()
+        DeviceType.OTHER -> MaterialShapes.Sunny.toShape()
+    }
+}
+
+/** Device badge: its type's shape and icon; containers rotate through primary / secondary / tertiary by type. */
+@Composable
+fun DeviceBadge(type: DeviceType, size: Dp = 52.dp, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val (container, content) = when (type) {
+        DeviceType.TV -> cs.primaryContainer to cs.onPrimaryContainer
+        DeviceType.AC -> cs.secondaryContainer to cs.onSecondaryContainer
+        DeviceType.SET_TOP_BOX -> cs.tertiaryContainer to cs.onTertiaryContainer
+        DeviceType.OTHER -> cs.secondaryContainer to cs.onSecondaryContainer
+    }
+    IconBadge(deviceIcon(type), size, modifier, shape = BeamShapes.device(type), container = container, content = content)
 }
 
 /**

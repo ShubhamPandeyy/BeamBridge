@@ -1,5 +1,5 @@
 // Bump baseVersion for a feature round; CI appends its run number so every build gets a unique, increasing version.
-val baseVersion = "1.8"
+val baseVersion = "1.9"
 val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
 
 plugins {
@@ -58,6 +58,7 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.compose.material.icons.extended)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

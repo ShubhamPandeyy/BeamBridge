@@ -35,8 +35,8 @@ fun ScenesScreen(vm: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Scenes") },
-                navigationIcon = { IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+                title = { Text("Scenes", style = BeamType.screenTitle, modifier = Modifier.padding(start = 4.dp)) },
+                navigationIcon = { FilledTonalIconButton(onClick = { vm.back() }, modifier = Modifier.padding(start = 8.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
             )
         },
         floatingActionButton = {
@@ -54,7 +54,7 @@ fun ScenesScreen(vm: MainViewModel) {
             items(scenes, key = { it.id }) { sc ->
                 Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, onClick = { vm.route.value = Route.SceneEdit(sc.id) }) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        IconBadge(Icons.Rounded.AutoAwesome, size = 44.dp)
+                        IconBadge(Icons.Rounded.AutoAwesome, size = 48.dp, shape = BeamShapes.scene, container = MaterialTheme.colorScheme.tertiaryContainer, content = MaterialTheme.colorScheme.onTertiaryContainer)
                         Column(Modifier.weight(1f)) {
                             Text(sc.name, style = MaterialTheme.typography.titleMedium)
                             Text("${sc.steps.size} steps", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -82,8 +82,8 @@ fun SceneEditorScreen(vm: MainViewModel, scene: Scene?, devices: List<SavedDevic
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (scene == null) "New scene" else "Edit scene") },
-                navigationIcon = { IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+                title = { Text(if (scene == null) "New scene" else "Edit scene", style = BeamType.screenTitle, modifier = Modifier.padding(start = 4.dp)) },
+                navigationIcon = { FilledTonalIconButton(onClick = { vm.back() }, modifier = Modifier.padding(start = 8.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
                 actions = {
                     if (scene != null) IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.DeleteOutline, "Delete scene") }
                     TextButton(onClick = { error = vm.saveScene(scene?.id, name, steps.toList()) }) { Text("Save") }
