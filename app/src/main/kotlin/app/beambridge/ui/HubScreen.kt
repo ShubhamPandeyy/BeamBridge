@@ -239,6 +239,13 @@ private fun ConnectionsCard(vm: MainViewModel, server: ServerStatus, devices: Li
                     }
                 }
             }
+            server.ipUrl?.takeIf { it != server.url }?.let { ip ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Backup: $ip", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TextButton(onClick = { vm.copyText("Bridge IP URL", ip) }) { Text("Copy") }
+                }
+            }
+            server.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             if (!locationGranted && server.running) TextButton(onClick = { askLocation.launch(android.Manifest.permission.ACCESS_FINE_LOCATION) }, contentPadding = PaddingValues(0.dp)) {
                 Icon(Icons.Rounded.Wifi, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Show my Wi-Fi name (needs location permission)")
             }

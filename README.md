@@ -47,8 +47,15 @@ Pair your TV, AC or set-top box once. Control it from the app, a web dashboard, 
 ### 🎬 Scenes & macros
 - One tap, many commands: *TV power → wait 3 s → HDMI 1 → AC on*. Run from the home screen, the web UI, or `GET /api/scenes/{id}/run`.
 
+### 🏷️ A permanent address: `remote.local`
+- The phone answers for `remote.local` on your Wi-Fi (mDNS), so the address never changes even when the router gives the phone a new IP. The app, the web UI and every API URL use `http://remote.local:6969` by default.
+- Change the name or switch it off in Settings → *Web server* → *Use a name instead of the IP*. Off = the old IP-based address.
+- If another device already uses the name, BeamBridge takes `remote-2` and tells you. If the name can't be set up, it falls back to the IP address and says so.
+- Port 6969 is used because Android can't open port 80 without root.
+- Not working? Some routers block device-to-device traffic ("client isolation"), and older Android/Linux/Windows setups may not resolve `.local` names. Use the backup IP address shown on the home screen.
+
 ### 🌐 Web dashboard & HTTP API
-- Everything the app does, in a browser at `http://<phone-ip>:8080`: devices, drag-and-drop remote layout, pairing, finder, scenes, history, settings.
+- Everything the app does, in a browser at `http://remote.local:6969`: devices, drag-and-drop remote layout, pairing, finder, scenes, history, settings.
 - **API playground** that builds ready-to-copy URL / curl / Home Assistant / fetch snippets.
 - Guest access or **username + password** (HTTP Basic auth), choose the listening address and check the port is free before saving.
 
@@ -94,11 +101,11 @@ flowchart LR
 
 1. **Build or download the APK** (see [Build](#-build)) and install it on a phone that has an IR blaster.
 2. Open BeamBridge, go through the 3-screen intro, then **Add**.
-3. Turn on the bridge from the home screen. It shows the address, for example `http://192.168.1.50:8080`. Tap the copy button.
+3. Turn on the bridge from the home screen. It shows the address, by default `http://remote.local:6969` (the IP address is listed below it as a backup). Tap the copy button.
 4. Open that address in any browser on the same Wi-Fi, or call a key's URL:
 
 ```bash
-curl -X POST "http://192.168.1.50:8080/api/blast?device=living_room_tv&button=POWER"
+curl -X POST "http://remote.local:6969/api/blast?device=living_room_tv&button=POWER"
 ```
 
 > 💡 Long-press any key in the app for **Copy endpoint URL**, favourites, hide and layout options.
@@ -159,7 +166,7 @@ AC devices take `POWER_ON`, `POWER_OFF`, `TEMP_UP`, `TEMP_DOWN`, `MODE_*` and `F
 ```yaml
 rest_command:
   tv_power:
-    url: "http://192.168.1.50:8080/api/blast?device=living_room_tv&button=POWER"
+    url: "http://remote.local:6969/api/blast?device=living_room_tv&button=POWER"
     method: POST
     # username: admin      # if password mode is on
     # password: secret

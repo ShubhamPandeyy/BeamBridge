@@ -432,6 +432,8 @@ async function viewSettings(v){
    <div class="t1">Web access</div><div class="row"><button class="chip ${s.auth==="guest"?"on":""}" data-auth="guest">Open (guest)</button><button class="chip ${s.auth==="password"?"on":""}" data-auth="password">Username + password</button></div>
    <div id="cred" class="col" ${s.auth==="password"?"":"hidden"}><label>Username<input id="u" value="${esc(s.username)}" autocomplete="username"></label><label>Password<input id="p" type="password" placeholder="${s.has_password?"unchanged":"at least 4 characters"}" autocomplete="new-password"></label></div>
    <div class="t1" style="margin-top:8px">Address</div><label>Listen on<select id="a">${net.options.map(o=>`<option value="${esc(o.address)}" ${o.address===s.bind_address?"selected":""}>${esc(o.label)}${/^\d/.test(o.address)&&o.address!=="0.0.0.0"?" · "+o.address:""}</option>`).join("")}</select></label>
+   <label class="row"><input type="checkbox" id="uh" style="width:auto" ${s.use_host_name?"checked":""}> Use a name instead of the IP address</label>
+   <label>Name (<code>.local</code>)<input id="hn" value="${esc(s.host_name)}" maxlength="32"></label>
    <label>Port<input id="port" type="number" min="1024" max="65535" value="${s.port}"></label><div class="row"><button class="btn out" id="chk">Check availability</button><span id="res" class="t2"></span></div>
    <div class="t1" style="margin-top:8px">Power</div>
    <label class="row"><input type="checkbox" id="wl" style="width:auto" ${s.wake_lock?"checked":""}> Keep CPU awake while serving</label>
@@ -441,9 +443,9 @@ async function viewSettings(v){
    <button class="btn" id="save">Save</button></div>`);
   let auth=s.auth;c.querySelectorAll("[data-auth]").forEach(b=>b.onclick=()=>{auth=b.dataset.auth;c.querySelectorAll("[data-auth]").forEach(x=>x.classList.toggle("on",x===b));$("#cred",c).hidden=auth!=="password"});
   $("#chk",c).onclick=async()=>{try{const r=await api(`/api/network/check?address=${enc($("#a",c).value)}&port=${$("#port",c).value}`);$("#res",c).textContent=!r.present?"Address not on this phone":r.available?`✓ Free · ${r.url}`:"✗ Port in use"}catch(e){$("#res",c).textContent=e.message}};
-  $("#save",c).onclick=async()=>{try{const body={auth,username:$("#u",c).value,bind_address:$("#a",c).value,port:+$("#port",c).value,wake_lock:$("#wl",c).checked,auto_start:$("#as",c).checked,allow_get:$("#ag",c).checked};
+  $("#save",c).onclick=async()=>{try{const body={auth,username:$("#u",c).value,bind_address:$("#a",c).value,host_name:$("#hn",c).value,use_host_name:$("#uh",c).checked,port:+$("#port",c).value,wake_lock:$("#wl",c).checked,auto_start:$("#as",c).checked,allow_get:$("#ag",c).checked};
     if($("#p",c).value)body.password=$("#p",c).value;await post("/api/settings",body);toast("Saved");
-    if(+body.port!==s.port||body.bind_address!==s.bind_address)toast("Server moved, open the new address")}catch(e){toast(e.message)}};v.append(c)}
+    if(+body.port!==s.port||body.bind_address!==s.bind_address||body.host_name!==s.host_name||body.use_host_name!==s.use_host_name)toast("Server moved, open the new address")}catch(e){toast(e.message)}};v.append(c)}
 
 refreshStatus();setInterval(refreshStatus,30000);render();
 </script>

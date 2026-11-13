@@ -2,7 +2,14 @@ package app.beambridge.service
 
 import kotlinx.coroutines.flow.MutableStateFlow
 
-data class ServerStatus(val running: Boolean = false, val url: String? = null, val error: String? = null)
+/**
+ * [url] is the address to use (the `.local` name when it works, else the IP); [ipUrl] is always the plain IP address
+ * as a backup; [notice] is a short heads-up about the name (renamed after a clash, not resolving, ...).
+ */
+data class ServerStatus(
+    val running: Boolean = false, val url: String? = null, val error: String? = null,
+    val ipUrl: String? = null, val notice: String? = null,
+)
 
 /** Process-wide server state, written by [BridgeService] and observed by the UI. */
 object BridgeRuntime {

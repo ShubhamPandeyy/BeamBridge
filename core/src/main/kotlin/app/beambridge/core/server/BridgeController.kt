@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** Builds the public URLs shown in the app ("Copy URL Endpoint") and returned by the API. */
 class Endpoints(private val baseUrl: () -> String?) {
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
-    fun base(): String = baseUrl() ?: "http://<phone-ip>:8080"
+    fun base(): String = baseUrl() ?: "http://remote.local:6969"
     fun blast(deviceId: String, button: String) = "${base()}/api/blast?device=${enc(deviceId)}&button=${enc(button)}"
     fun device(deviceId: String) = "${base()}/api/devices/${enc(deviceId)}"
     fun ac(deviceId: String, s: AcState) =

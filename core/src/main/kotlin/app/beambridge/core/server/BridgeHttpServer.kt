@@ -1,6 +1,7 @@
 package app.beambridge.core.server
 
 import app.beambridge.core.data.*
+import app.beambridge.core.mdns.HostNames
 import app.beambridge.core.ir.IrCode
 import app.beambridge.core.ir.IrEncodingException
 import fi.iki.elonen.NanoHTTPD
@@ -411,6 +412,8 @@ class BridgeHttpServer(
         val c = bridge.settings.settings.value
         put("port", c.port)
         put("bind_address", c.bindAddress)
+        put("host_name", c.hostName)
+        put("use_host_name", c.useHostName)
         put("auth", c.authMode.name.lowercase())
         put("username", c.username)
         put("has_password", c.hasPassword)
@@ -428,6 +431,8 @@ class BridgeHttpServer(
             if (a != "auto" && a != "0.0.0.0" && Net.bindOptions().none { it.address == a }) return bad("Unknown address '$a'. Use one from /api/network")
             a
         } ?: cur.bindAddress
+        val hostName = p["host_name"]?.let { HostNames.sanitize(it) } ?: cur.hostName
+        val useHost = p["use_host_name"]?.let { it.strictBool() ?: return bad("Invalid use_host_name '$it'") } ?: cur.useHostName
         val auth = p["auth"]?.let {
             when (it.lowercase()) { "password" -> AuthMode.PASSWORD; "guest" -> AuthMode.GUEST; else -> return bad("Invalid auth '$it'. Use guest or password") }
         } ?: cur.authMode
@@ -435,7 +440,7 @@ class BridgeHttpServer(
         val auto = p["auto_start"]?.let { it.strictBool() ?: return bad("Invalid auto_start '$it'") } ?: cur.autoStart
         val allowGet = p["allow_get"]?.let { it.strictBool() ?: return bad("Invalid allow_get '$it'") } ?: cur.allowGetActions
         val next = cur.copy(
-            port = port, bindAddress = bind, authMode = auth,
+            port = port, bindAddress = bind, hostName = hostName, useHostName = useHost, authMode = auth,
             username = p["username"]?.trim() ?: cur.username,
             password = p["password"]?.takeIf { it.isNotEmpty() } ?: "",
             wakeLock = wake, autoStart = auto, allowGetActions = allowGet,

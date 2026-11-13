@@ -20,6 +20,8 @@ object Net {
             .sortedBy { it.second }.map { it.first }.distinctBy { it.address }
     }.getOrElse { emptyList() }
 
+    fun ipv4(address: String): Inet4Address? = runCatching { InetAddress.getByName(address) as? Inet4Address }.getOrNull()
+
     fun localIpv4(): String? = localAddresses().firstOrNull()?.address
 
     /** Every choice offered in settings: auto, each local address, all interfaces. */

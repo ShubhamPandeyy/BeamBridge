@@ -2,6 +2,13 @@
 
 The section matching the current `baseVersion` is placed at the top of each GitHub Release's notes; the commit list is appended automatically (see `.github/workflows/android.yml`).
 
+## 1.10
+
+- **`remote.local` address:** the phone now answers for `remote.local` on the Wi-Fi, so the web UI and API stay at `http://remote.local:6969` when the phone's IP changes. The home screen shows it with the IP as a backup.
+- Default port is now **6969** (existing saved ports are kept).
+- Settings → Web server: change the name, or turn it off to go back to the IP address. A name clash becomes `remote-2`; if the name fails, the IP is used and a note explains why.
+- Holds a Wi-Fi multicast lock while the bridge is on.
+
 ## 1.9
 
 **Material 3 Expressive redesign.**

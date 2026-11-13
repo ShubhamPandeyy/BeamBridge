@@ -217,7 +217,12 @@ class ServerTest {
         assertEquals(400, call("POST", "/api/settings", "auth=admin").first)
         assertEquals(400, call("POST", "/api/settings", "wake_lock=maybe").first)
         assertEquals(400, call("POST", "/api/settings", "bind_address=10.9.9.9").first)
-        assertEquals(8080, settings.settings.value.port)
+        assertEquals(6969, settings.settings.value.port)
+        assertEquals(200, call("POST", "/api/settings", "host_name=My Remote!").first)
+        assertEquals("my-remote", settings.settings.value.hostName)
+        assertEquals(200, call("POST", "/api/settings", "use_host_name=false").first)
+        assertEquals(false, settings.settings.value.useHostName)
+        assertEquals(400, call("POST", "/api/settings", "use_host_name=maybe").first)
     }
 
     @Test fun historyRecordsSourceAndResult() {

@@ -21,6 +21,7 @@ import androidx.core.app.ServiceCompat
 import app.beambridge.BeamBridgeApp
 import app.beambridge.MainActivity
 import app.beambridge.R
+import app.beambridge.core.mdns.MdnsResponder
 import app.beambridge.core.server.BridgeHttpServer
 import app.beambridge.core.server.Net
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -40,6 +41,9 @@ class BridgeService : Service() {
     private var boundPort: Int = 0
     private var wifiLock: WifiManager.WifiLock? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
+    private var responder: MdnsResponder? = null
+    private var responderKey: String? = null
     private var callbackRegistered = false
 
     private val graph get() = (application as BeamBridgeApp).graph
@@ -97,7 +101,11 @@ class BridgeService : Service() {
         val cfg = graph.settings.settings.value
         val port = cfg.port
         val host = Net.resolve(cfg.bindAddress)
-        if (!force && server != null && host == boundIp && port == boundPort) return
+        if (!force && server != null && host == boundIp && port == boundPort) {
+            // Same socket, but the phone's address (for "all interfaces") or the name settings may have moved.
+            syncResponder(); publishStatus()
+            return
+        }
 
         stopServer()
         if (host == "") {
@@ -116,9 +124,8 @@ class BridgeService : Service() {
             boundPort = port
             BridgeRuntime.bound = host to port
             acquireLocks()
-            val url = Net.publicHost(host)?.let { "http://$it:$port" }
-            BridgeRuntime.status.value = ServerStatus(running = true, url = url)
-            notify(url ?: "No Wi-Fi connection")
+            syncResponder()
+            publishStatus()
         } catch (e: Exception) {
             releaseLocks()
             BridgeRuntime.status.value = ServerStatus(running = false, error = e.message ?: "Could not start")
@@ -126,7 +133,50 @@ class BridgeService : Service() {
         }
     }
 
+    /** (Re)starts the `.local` name responder when the Wi-Fi address, name or on/off setting changed. */
+    private fun syncResponder() {
+        val cfg = graph.settings.settings.value
+        val ip = if (cfg.useHostName) Net.publicHost(boundIp)?.let { Net.ipv4(it) } else null
+        val key = ip?.let { "${cfg.hostName}@${it.hostAddress}" }
+        if (key == responderKey && (key == null || responder?.state != MdnsResponder.State.FAILED)) return
+        stopResponder()
+        if (ip == null) return
+        responderKey = key
+        responder = MdnsResponder(cfg.hostName, ip) { handler.post { publishStatus() } }.also { it.start() }
+    }
+
+    private fun stopResponder() {
+        runCatching { responder?.stop() }
+        responder = null
+        responderKey = null
+    }
+
+    /** Works out which address to show and use, and a short note about the name when something is off. */
+    private fun publishStatus() {
+        if (server == null) return
+        val cfg = graph.settings.settings.value
+        val port = boundPort
+        val ipUrl = Net.publicHost(boundIp)?.let { "http://$it:$port" }
+        val r = responder
+        val nameUp = cfg.useHostName && r != null && r.state == MdnsResponder.State.READY
+        val hostUrl = if (nameUp) "http://${r!!.host}:$port" else null
+        val notice = when {
+            !cfg.useHostName -> null
+            r == null -> "No Wi-Fi address yet for ${cfg.hostName}.local"
+            r.state == MdnsResponder.State.FAILED -> "${cfg.hostName}.local is unavailable (${r.error ?: "error"}), using the IP address"
+            r.state == MdnsResponder.State.READY && r.renamed -> "${cfg.hostName}.local was taken on this network, using ${r.host}"
+            r.state == MdnsResponder.State.READY && r.loopbackOk == false ->
+                "${r.host} may not work on this network (router blocks device-to-device traffic?). The IP address always works."
+            else -> null
+        }
+        // While the name is being checked (under a second) show the IP so nothing breaks.
+        val url = hostUrl ?: ipUrl
+        BridgeRuntime.status.value = ServerStatus(running = true, url = url, ipUrl = ipUrl, notice = notice)
+        notify(url ?: "No Wi-Fi connection")
+    }
+
     private fun stopServer() {
+        stopResponder()
         runCatching { server?.stop() }
         server = null
         boundIp = null
@@ -163,6 +213,11 @@ class BridgeService : Service() {
             val mode = if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY else WifiManager.WIFI_MODE_FULL_HIGH_PERF
             wifiLock = wm.createWifiLock(mode, "beambridge:wifi").apply { setReferenceCounted(false); acquire() }
         }
+        // mDNS (the .local name) needs Android to deliver multicast packets, which it otherwise drops to save battery.
+        if (multicastLock == null) {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            multicastLock = runCatching { wm.createMulticastLock("beambridge:name").apply { setReferenceCounted(false); acquire() } }.getOrNull()
+        }
         if (graph.settings.settings.value.wakeLock && wakeLock == null) {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "beambridge:server").apply { setReferenceCounted(false); acquire() }
@@ -172,6 +227,8 @@ class BridgeService : Service() {
     private fun releaseLocks() {
         runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
         runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        runCatching { multicastLock?.takeIf { it.isHeld }?.release() }
+        multicastLock = null
         wifiLock = null
         wakeLock = null
     }

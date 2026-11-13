@@ -17,8 +17,12 @@ enum class AuthMode { GUEST, PASSWORD }
  */
 @Serializable
 data class BridgeSettings(
-    val port: Int = 8080,
+    val port: Int = 6969,
     val bindAddress: String = "auto",
+    /** The app and API are reached at `http://<hostName>.local:<port>`; the phone answers for that name on the Wi-Fi (mDNS). */
+    val hostName: String = "remote",
+    /** Off = legacy mode: show and use the phone's IP address instead of the .local name. */
+    val useHostName: Boolean = true,
     val authMode: AuthMode = AuthMode.GUEST,
     val username: String = "admin",
     /** Only ever a *new* password on its way in; stores keep [passwordHash] and clear this. */
@@ -67,6 +71,7 @@ data class BridgeSettings(
 
     fun validate(): String? = when {
         port !in 1024..65535 -> "Port must be 1024-65535"
+        !app.beambridge.core.mdns.HostNames.isValid(hostName) -> "Name: 1-32 letters, digits or dashes"
         authMode == AuthMode.PASSWORD && username.isBlank() -> "Username needed"
         password.isNotEmpty() && password.length < 4 -> "Password needs 4+ characters"
         authMode == AuthMode.PASSWORD && !hasPassword -> "Password needs 4+ characters"

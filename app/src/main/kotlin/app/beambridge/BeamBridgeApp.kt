@@ -41,7 +41,8 @@ class Graph(private val app: Application) {
     /** Base URL for "Copy URL Endpoint": the live server address, or where it would listen with current settings. */
     val endpoints = Endpoints {
         BridgeRuntime.status.value.url ?: settings.settings.value.let { s ->
-            Net.publicHost(Net.resolve(s.bindAddress)?.takeIf { it.isNotEmpty() })?.let { "http://$it:${s.port}" }
+            if (s.useHostName) "http://${s.hostName}.local:${s.port}"
+            else Net.publicHost(Net.resolve(s.bindAddress)?.takeIf { it.isNotEmpty() })?.let { "http://$it:${s.port}" }
         }
     }
     val history = CommandHistory(File(app.filesDir, "history.json"))

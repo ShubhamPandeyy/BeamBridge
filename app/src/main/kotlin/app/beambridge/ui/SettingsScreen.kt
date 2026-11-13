@@ -191,6 +191,14 @@ private fun ServerPage(vm: MainViewModel) {
                         }
                     }
                 }
+                MenuSwitchRow(Icons.Rounded.Link, "Use a name instead of the IP", "Reach the phone at http://${draft.hostName}.local:$port. Turn off to use the IP address (legacy).", draft.useHostName) { draft = draft.copy(useHostName = it) }
+                if (draft.useHostName) {
+                    OutlinedTextField(
+                        draft.hostName, { draft = draft.copy(hostName = it.lowercase().filter { c -> c.isLetterOrDigit() && c.code < 128 || c == '-' }.take(32)) },
+                        label = { Text("Name") }, suffix = { Text(".local") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        supportingText = { Text("Letters, digits and dashes. If another device already uses it, a number is added.") },
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         portText, { portText = it.filter(Char::isDigit).take(5); check = null }, label = { Text("Port") }, singleLine = true,
@@ -213,7 +221,7 @@ private fun ServerPage(vm: MainViewModel) {
         onClick = {
             // Only the web/server fields come from the draft; app preferences keep their live values.
             error = vm.saveSettings(current.copy(
-                port = port, bindAddress = draft.bindAddress, authMode = draft.authMode, username = draft.username,
+                port = port, bindAddress = draft.bindAddress, hostName = draft.hostName.trim('-').ifEmpty { "remote" }, useHostName = draft.useHostName, authMode = draft.authMode, username = draft.username,
                 password = draft.password, wakeLock = draft.wakeLock, autoStart = draft.autoStart, allowGetActions = draft.allowGetActions,
             ))
             if (error == null) { vm.toast("Saved"); vm.back() }

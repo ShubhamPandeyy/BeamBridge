@@ -94,7 +94,7 @@ class Bridge(
             if (!isFree(host, next.port)) return "Port ${next.port} is busy on ${host ?: "all interfaces"}"
         }
         settings.update { next }
-        if (next.port != old.port || next.bindAddress != old.bindAddress) hooks.restartServer()
+        if (next.port != old.port || next.bindAddress != old.bindAddress || next.hostName != old.hostName || next.useHostName != old.useHostName) hooks.restartServer()
         return null
     }
 
